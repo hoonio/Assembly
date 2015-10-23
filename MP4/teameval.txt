@@ -1,0 +1,32 @@
+Your name:  Seunghoon Kim 
+Your netid:  skim41
+Quantity(0-3):  3
+Quality(0-3):  3
+Timeliness(0-3):  3 
+Cooperation(0-3):  3
+Comments (optional):
+ 
+Partner's name:  Ki Chung
+Partner's netid:  kichung
+Quantity(0-3):  3
+Quality(0-3):  3
+Timeliness(0-3):  3
+Cooperation(0-3):  3
+Comments (optional):
+ 
+Partner's name:  Gi Hyun Ko
+Partner's netid:  giko	 
+Quantity(0-3):  3
+Quality(0-3):  3
+Timeliness(0-3):  3
+Cooperation(0-3):  3
+Comments (optional):
+ 
+Partner's name:  Hyun J Jeong
+Partner's netid:  hjeong
+Quantity(0-3):  3
+Quality(0-3):  3
+Timeliness(0-3):  3
+Cooperation(0-3):  3
+Comments (optional):
+ 

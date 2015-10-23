@@ -1,0 +1,12 @@
+functions done:
+
+_UpdateCursor
+_BoundaryInRegion
+_BlockInRegion
+_random
+
+
+included variable called seed for random function
+
+
+*note: i didn't compile them or anything yet.

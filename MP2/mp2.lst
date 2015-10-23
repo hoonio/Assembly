@@ -1,0 +1,780 @@
+     1                                  ; MP2 - Sorting Efficiency
+     2                                  ;  Seunghoon Kim
+     3                                  ;  9/29/2003
+     4                                  ;
+     5                                  ; Doug Jones, Fall 2003
+     6                                  ; Guest Author: Ryan Chmiel
+     7                                  ; University of Illinois, Urbana-Champaign
+     8                                  ; Dept. of Electrical and Computer Engineering
+     9                                  ;
+    10                                  ; Version 1.0
+    11                                  
+    12                                  	BITS	16
+    13                                  
+    14                                  ;====== SECTION 1: Define constants =======================================
+    15                                  
+    16                                  ; Define general constants
+    17                                          CR      	EQU     0Dh
+    18                                          LF      	EQU     0Ah
+    19                                  	ESC		EQU	1Bh
+    20                                  	SPACE		EQU	20h
+    21                                  	BACKSPACE	EQU	08h
+    22                                  	MAXLENGTH	EQU	75
+    23                                  	MAXNUMBERS	EQU	20
+    24                                  
+    25                                  ;====== SECTION 2: Declare external routines ==============================
+    26                                  
+    27                                  ; Declare external library routines and variables
+    28                                  EXTERN kbdin, kbdine, dspmsg, ascbin, binasc, dosxit, dspout
+    29                                  EXTERN mp2xit, DisplayNumber, Test_CToF, Test_Factorial, Test_CalculateGrades, Grades
+    30                                  EXTERN libGetInput, libParseInput, libPrintArray, libHeapSort, libHeapify, libInsertionSort
+    31                                  
+    32                                  GLOBAL CToF, Factorial, CalculateGrades, binascBuf, Heapify, CompareCount, SwapCount
+    33                                      
+    34                                  ;====== SECTION 3: Define stack segment ===================================
+    35                                  
+    36                                  SEGMENT stkseg STACK                    ; *** STACK SEGMENT ***
+    37 00000000 <res 00000200>                  resb      64*8
+    38                                  stacktop:
+    39                                          resb      0                     ; work around NASM bug
+    40                                  
+    41                                  ;====== SECTION 4: Define code segment ====================================
+    42                                  
+    43                                  SEGMENT code                            ; *** CODE SEGMENT ***
+    44                                  
+    45                                  ;====== SECTION 5: Declare variables for main procedure ===================
+    46                                  
+    47 00000000 0D0A                    IntroString	db	CR,LF
+    48 00000002 DA                      		db	0DAh
+    49 00000003 C4<rept>                		times 31 db 0C4h
+    50 00000022 BF0D0A                  		db	0BFh,CR,LF
+    51 00000025 B32020202020E443E4-     		db	0B3h, '     ', 228, 'C', 228, ' 291 Fall 2003 MP2     ', 0B3h, CR, LF
+    52 0000002E 203239312046616C6C-
+    53 00000037 2032303033204D5032-
+    54 00000040 2020202020B30D0A   
+    55 00000048 B32020202020202020-     		db	0B3h, '           MAIN MENU           ', 0B3h, CR, LF
+    56 00000051 2020204D41494E204D-
+    57 0000005A 454E55202020202020-
+    58 00000063 2020202020B30D0A   
+    59 0000006B B3                      		db	0B3h
+    60 0000006C 00<rept>                		times 31 db 0h
+    61 0000008B B30D0A                  		db	0B3h,CR,LF
+    62 0000008E B3202020312E205275-     		db	0B3h, '   1. Run MP2                  ', 0B3h, CR, LF
+    63 00000097 6E204D503220202020-
+    64 000000A0 202020202020202020-
+    65 000000A9 2020202020B30D0A   
+    66 000000B1 B3202020322E205465-     		db	0B3h, '   2. Test CToF()              ', 0B3h, CR, LF
+    67 000000BA 73742043546F462829-
+    68 000000C3 202020202020202020-
+    69 000000CC 2020202020B30D0A   
+    70 000000D4 B3202020332E205465-     		db	0B3h, '   3. Test Factorial()         ', 0B3h, CR, LF
+    71 000000DD 737420466163746F72-
+    72 000000E6 69616C282920202020-
+    73 000000EF 2020202020B30D0A   
+    74 000000F7 B3202020342E205465-     		db	0B3h, '   4. Test CalculateGrades()   ', 0B3h, CR, LF
+    75 00000100 73742043616C63756C-
+    76 00000109 617465477261646573-
+    77 00000112 2829202020B30D0A   
+    78 0000011A C0                      		db	0C0h
+    79 0000011B C4<rept>                		times 31 db 0C4h
+    80 0000013A D90D0A0D0A506C6561-     		db	0D9h,CR,LF,CR,LF,'Please make your selection: $'
+    81 00000143 7365206D616B652079-
+    82 0000014C 6F75722073656C6563-
+    83 00000155 74696F6E3A2024     
+    84                                  
+    85 0000015C 0D0A                    SortString	db	CR,LF
+    86 0000015E DA                      		db	0DAh
+    87 0000015F C4<rept>                		times 31 db 0C4h
+    88 0000017E BF0D0A                  		db	0BFh,CR,LF
+    89 00000181 B32020202020E443E4-     		db	0B3h, '     ', 228, 'C', 228, ' 291 Fall 2003 MP2     ', 0B3h, CR, LF
+    90 0000018A 203239312046616C6C-
+    91 00000193 2032303033204D5032-
+    92 0000019C 2020202020B30D0A   
+    93 000001A4 B3202020202020536F-     		db	0B3h, '      Sorting Efficiency       ', 0B3h, CR, LF
+    94 000001AD 7274696E6720456666-
+    95 000001B6 696369656E63792020-
+    96 000001BF 2020202020B30D0A   
+    97 000001C7 B3                      		db	0B3h
+    98 000001C8 00<rept>                		times 31 db 0h
+    99 000001E7 B30D0A                  		db	0B3h,CR,LF
+   100 000001EA B3202020202020203C-     		db	0B3h, '       <H>eap Sort             ', 0B3h, CR, LF
+   101 000001F3 483E65617020536F72-
+   102 000001FC 742020202020202020-
+   103 00000205 2020202020B30D0A   
+   104 0000020D B3202020202020203C-     		db	0B3h, '       <I>nsertion Sort        ', 0B3h, CR, LF
+   105 00000216 493E6E73657274696F-
+   106 0000021F 6E20536F7274202020-
+   107 00000228 2020202020B30D0A   
+   108 00000230 C0                      		db	0C0h
+   109 00000231 C4<rept>                		times 31 db 0C4h
+   110 00000250 D90D0A0D0A24            		db	0D9h,CR,LF,CR,LF,'$'
+   111                                  	
+   112 00000256 496E70757420666F72-     InputString	db	'Input format: <sort letter> <string of numbers, each separated by a space>',CR,LF,': $'
+   113 0000025F 6D61743A203C736F72-
+   114 00000268 74206C65747465723E-
+   115 00000271 203C737472696E6720-
+   116 0000027A 6F66206E756D626572-
+   117 00000283 732C20656163682073-
+   118 0000028C 657061726174656420-
+   119 00000295 627920612073706163-
+   120 0000029E 653E0D0A3A2024     
+   121 000002A5 496E76616C69642049-     ErrorString	db	'Invalid Input: please reenter your input.',CR,LF,'$'
+   122 000002AE 6E7075743A20706C65-
+   123 000002B7 617365207265656E74-
+   124 000002C0 657220796F75722069-
+   125 000002C9 6E7075742E0D0A24   
+   126 000002D1 0D0A536F7274656420-     SortedString	db	CR,LF,'Sorted array:',CR,LF,'$'
+   127 000002DA 61727261793A0D0A24 
+   128 000002E3 4E756D626572206F66-     CompareString	db	'Number of comparisons: ','$'
+   129 000002EC 20636F6D7061726973-
+   130 000002F5 6F6E733A2024       
+   131 000002FB 4E756D626572206F66-     SwapString	db	'Number of swaps: ','$'
+   132 00000304 2073776170733A2024 
+   133 0000030D 0D0A24                  EnterString	db	CR,LF,'$'
+   134                                  
+   135 00000310 00<rept>                NumberString	times MAXLENGTH+1 db 0
+   136 0000035C 0000                    HeapArray	dw	0
+   137 0000035E 0000<rept>              NumberArray	times MAXNUMBERS  dw 0
+   138 00000386 0000                    NumberArrayLen	dw	0
+   139                                  
+   140 00000388 0000                    CompareCount	dw	0
+   141 0000038A 0000                    SwapCount	dw	0
+   142                                  
+   143 0000038C [D203][0000][0000]-     FunctionTable	dw	MP2Main, Test_CToF, Test_Factorial, Test_CalculateGrades
+   144 00000392 [0000]             
+   145                                  			       
+   146 00000394 00<rept>                binascBuf	times 	7 db 0
+   147                                  
+   148                                  ;====== SECTION 6: Program initialization =================================
+   149                                  
+   150                                  ..start:
+   151 0000039B 8CC8                            mov     ax, cs                  ; Initialize Default Segment register
+   152 0000039D 8ED8                            mov     ds, ax  
+   153 0000039F B8[0000]                        mov     ax, stkseg              ; Initialize Stack Segment register
+   154 000003A2 8ED0                            mov     ss, ax
+   155 000003A4 BC[0002]                        mov     sp, stacktop            ; Initialize Stack Pointer register
+   156                                  
+   157                                  ;====== SECTION 7: Main procedure =========================================
+   158                                  
+   159                                  .SelectLoop
+   160 000003A7 BA[0000]                	mov	dx, IntroString
+   161 000003AA E8(0000)                	call	dspmsg
+   162 000003AD 31C0                    	xor	ax, ax
+   163 000003AF E8(0000)                	call	kbdin
+   164 000003B2 3C1B                    	cmp	al, ESC
+   165 000003B4 7419                    	je	.Done
+   166 000003B6 88C2                    	mov	dl, al
+   167 000003B8 E8(0000)                	call	dspout
+   168 000003BB BA[0D03]                	mov	dx, EnterString
+   169 000003BE E8(0000)                	call	dspmsg
+   170 000003C1 2C31                    	sub	al, 31h
+   171 000003C3 3C04                    	cmp	al, 4
+   172 000003C5 73E0                    	jae	.SelectLoop
+   173                                  
+   174 000003C7 89C3                    	mov	bx, ax
+   175 000003C9 D1E3                    	shl	bx, 1
+   176 000003CB FF97[8C03]              	call	[FunctionTable+bx]
+   177                                  
+   178                                  .Done
+   179 000003CF E8(0000)                	call	mp2xit
+   180                                  
+   181                                  ;--------------------------------------------------------------
+   182                                  ;--                        MP2Main()                         --
+   183                                  ;--------------------------------------------------------------
+   184                                  MP2Main	
+   185 000003D2 BA[5C01]                	mov	dx, SortString
+   186 000003D5 E8(0000)                	call	dspmsg
+   187 000003D8 BA[5602]                	mov	dx, InputString
+   188 000003DB E8(0000)                	call	dspmsg
+   189                                  
+   190 000003DE 68[1003]                	push	word NumberString
+   191 000003E1 E8A300                  	call	GetInput
+   192 000003E4 81C40200                	add	sp, 2
+   193 000003E8 85C0                    	test	ax, ax
+   194 000003EA 0F889800                	js	near .Done
+   195                                  
+   196 000003EE 68[8603]                	push	word NumberArrayLen
+   197 000003F1 68[5E03]                	push	word NumberArray
+   198 000003F4 68[1003]                	push	word NumberString
+   199 000003F7 E8E500                  	call	ParseInput
+   200 000003FA 81C40600                	add	sp, 6
+   201                                  
+   202 000003FE 84C0                    	test	al, al
+   203 00000400 7908                    	jns	.ChooseSort
+   204 00000402 BA[A502]                	mov	dx, ErrorString
+   205 00000405 E8(0000)                	call	dspmsg
+   206 00000408 EBC8                    	jmp	MP2Main
+   207                                  
+   208                                  .ChooseSort
+   209 0000040A 813E[8603]0100          	cmp	word [NumberArrayLen], 1
+   210 00000410 7423                    	je	.Print
+   211 00000412 3C49                    	cmp	al, 'I'
+   212 00000414 7411                    	je	.InsertionSort
+   213                                  
+   214                                  .HeapSort
+   215 00000416 FF36[8603]              	push	word [NumberArrayLen]
+   216 0000041A 68[5C03]                	push	word HeapArray
+   217 0000041D E84301                  	call	HeapSort
+   218 00000420 81C40400                	add	sp, 4
+   219 00000424 E90E00                  	jmp	.Print
+   220                                  	
+   221                                  .InsertionSort
+   222 00000427 FF36[8603]              	push	word [NumberArrayLen]
+   223 0000042B 68[5E03]                	push	word NumberArray
+   224 0000042E E8F601                  	call	InsertionSort
+   225 00000431 81C40400                	add	sp, 4
+   226                                  
+   227                                  .Print
+   228 00000435 BA[D102]                	mov	dx, SortedString
+   229 00000438 E8(0000)                	call	dspmsg
+   230 0000043B FF36[8603]              	push	word [NumberArrayLen]
+   231 0000043F 68[5E03]                	push	word NumberArray
+   232 00000442 E8E800                  	call	PrintArray
+   233 00000445 81C40400                	add	sp, 4
+   234 00000449 BA[0D03]                	mov	dx, EnterString
+   235 0000044C E8(0000)                	call	dspmsg
+   236 0000044F E8(0000)                	call	dspmsg
+   237 00000452 BA[E302]                	mov	dx, CompareString
+   238 00000455 E8(0000)                	call	dspmsg
+   239 00000458 A1[8803]                	mov	ax, [CompareCount]
+   240 0000045B BB[9403]                	mov 	bx, binascBuf
+   241 0000045E E8(0000)                	call	binasc
+   242 00000461 89DA                    	mov	dx, bx
+   243 00000463 E8(0000)                	call	dspmsg
+   244 00000466 BA[0D03]                	mov	dx, EnterString
+   245 00000469 E8(0000)                	call	dspmsg
+   246 0000046C BA[FB02]                	mov	dx, SwapString
+   247 0000046F E8(0000)                	call	dspmsg
+   248 00000472 A1[8A03]                	mov	ax, [SwapCount]
+   249 00000475 BB[9403]                	mov 	bx, binascBuf
+   250 00000478 E8(0000)                	call	binasc
+   251 0000047B 89DA                    	mov	dx, bx
+   252 0000047D E8(0000)                	call	dspmsg
+   253 00000480 BA[0D03]                	mov	dx, EnterString
+   254 00000483 E8(0000)                	call	dspmsg
+   255                                  	
+   256                                  .Done
+   257 00000486 C3                      	ret
+   258                                  	
+   259                                  ;====== SECTION 8: Your subroutines =======================================
+   260                                  
+   261                                  ;--------------------------------------------------------------
+   262                                  ;--          Replace library calls with your code!           --
+   263                                  ;--          [Save all reg values that you modify]           --
+   264                                  ;--          Do not forget to add function headers           --
+   265                                  ;--------------------------------------------------------------
+   266                                  
+   267                                  
+   268                                  ;--------------------------------------------------------------
+   269                                  ;--                        GetInput()						 --
+   270                                  ;--										                     --
+   271                                  ;--	Obtains input from the user								 --
+   272                                  ;--	Inputs: Buffer - Pointer to buffer in memory			 --
+   273                                  ;--	Outputs: Input string written to Buffer					 --
+   274                                  ;--	Returns: -1 if the user presses ESC to quit the program, --
+   275                                  ;--		0 otherwise											 --
+   276                                  ;--	Calls: kbdin, dspout									 --
+   277                                  ;--------------------------------------------------------------
+   278                                  GetInput
+   279 00000487 55                      	push	bp
+   280 00000488 89E5                    	mov		bp, sp
+   281                                  	
+   282                                  ;	push	word [bp+4]
+   283                                  ;	call	libGetInput
+   284                                  ;	add		sp, 2
+   285                                  
+   286 0000048A 52                      	push	dx
+   287 0000048B 53                      	push	bx
+   288 0000048C 51                      	push	cx
+   289 0000048D 8B5E04                  	mov		bx, word[bp+4]				; bx points to the number string 
+   290 00000490 B94B00                  	mov		cx, MAXLENGTH				; counter to limit number of characters to MAXLENGTH
+   291                                  
+   292                                  .InputLoop
+   293 00000493 E8(0000)                	call	kbdin
+   294 00000496 3C1B                    	cmp		al, 1Bh					; compare with Esc to escape
+   295 00000498 7439                    	je		.Escape
+   296 0000049A 3C0D                    	cmp		al, 0Dh					; compare with Enter to end the string
+   297 0000049C 742C                    	je		.EndString
+   298 0000049E 3C08                    	cmp		al, 08h					; compare with backapace
+   299 000004A0 7412                    	je		.backspace					
+   300 000004A2 81F90000                	cmp		cx, 0					; if MAXLENGTH is reached, keep running the loop until the user presses ESC, Enter, or backspace
+   301 000004A6 74EB                    	je		.InputLoop
+   302 000004A8 8807                    	mov		byte[bx], al				; enter the character into the string
+   303 000004AA 88C2                    	mov		dl, al
+   304 000004AC 43                      	inc		bx
+   305 000004AD E8(0000)                	call	dspout						; display the character user input
+   306 000004B0 E2E1                    	loop	.InputLoop
+   307 000004B2 EBDF                    	jmp		.InputLoop
+   308                                  .backspace
+   309 000004B4 B208                    	mov		dl, 08h
+   310 000004B6 E8(0000)                	call	dspout
+   311 000004B9 B200                    	mov		dl, 00h
+   312 000004BB E8(0000)                	call	dspout
+   313 000004BE B208                    	mov		dl, 08h
+   314 000004C0 E8(0000)                	call	dspout
+   315                                  	;mov		byte[bx], 00h
+   316 000004C3 4B                      	dec		bx
+   317 000004C4 C60700                  	mov		byte[bx], 00h				; backspace, erases the previous string, and updates the cursor in windows
+   318 000004C7 41                      	inc		cx
+   319 000004C8 EBC9                    	jmp		.InputLoop
+   320                                  .EndString
+   321 000004CA C60724                  	mov		byte[bx], 24h				; inputs $ at the end of the string, and goto the end
+   322 000004CD B80000                  	mov		ax, 0
+   323 000004D0 E90700                  	jmp		.Done
+   324                                  .Escape
+   325 000004D3 B80000                  	mov		ax, 0					; on Esc, FFFF is entered into ax
+   326 000004D6 48                      	dec		ax
+   327 000004D7 E90000                  	jmp		.Done
+   328                                  .Done:
+   329 000004DA 59                      	pop		cx
+   330 000004DB 5B                      	pop		bx
+   331 000004DC 5A                      	pop		dx
+   332 000004DD 5D                      	pop		bp
+   333 000004DE C3                      	ret
+   334                                  
+   335                                  ;-------------------------------------------------------------------------
+   336                                  ;--								ParseInput()							--
+   337                                  ;--																		--
+   338                                  ;--	Parses the input buffer and stores numbers to an array in memory	--
+   339                                  ;--	Inputs: Buffer - Pointer to buffer in memory						--
+   340                                  ;--			Array - Pointer to array in memory							--
+   341                                  ;--			Length - Pointer to word-sized variable in memory			--
+   342                                  ;--	Outputs: Array contains numbers parsed from Buffer					--
+   343                                  ;--			Array length written to Length								--
+   344                                  ;--	Returns: The ASCII character corresponding to the type of sort		--
+   345                                  ;--			to be performed, or -1 if there is an error					--
+   346                                  ;--			in parsing the input buffer									--
+   347                                  ;--	Calls: ascbin														--
+   348                                  ;-------------------------------------------------------------------------
+   349                                  ParseInput
+   350 000004DF 55                      	push	bp
+   351 000004E0 89E5                    	mov		bp, sp
+   352                                  
+   353                                  ;	push	word [bp+8]
+   354                                  ;	push	word [bp+6]
+   355                                  ;	push	word [bp+4]
+   356                                  ;	call	libParseInput
+   357                                  ;	add	sp, 6
+   358                                  
+   359 000004E2 51                      	push	cx
+   360 000004E3 53                      	push	bx
+   361 000004E4 56                      	push	si
+   362 000004E5 57                      	push	di
+   363 000004E6 B90000                  	mov		cx, 0
+   364 000004E9 8B5E04                  	mov		bx, word[bp+4]				; bx points to the number string
+   365 000004EC 8B7E06                  	mov		di,	word[bp+6]				; di points to the number array
+   366 000004EF 31C0                    	xor		ax, ax
+   367 000004F1 8A07                    	mov		al,	byte[bx]
+   368 000004F3 3C48                    	cmp		al, 48h						; lower than h, invalid input
+   369 000004F5 722D                    	jb		.parseError
+   370 000004F7 3C49                    	cmp		al,	49h						; higher than i, invalid input
+   371 000004F9 7729                    	ja		.parseError
+   372 000004FB 50                      	push	ax
+   373 000004FC 43                      	inc		bx
+   374                                  
+   375                                  .parseLoop	
+   376 000004FD 81F91400                	cmp		cx, MAXNUMBERS				; if the number of values exceed MAXNUMBERS, then stop adding to the array
+   377 00000501 7416                    	je		.parseStore
+   378 00000503 803F24                  	cmp		byte[bx], 24h				; if end of the string($) is reached, stop adding
+   379 00000506 7411                    	je		.parseStore
+   380 00000508 E8(0000)                	call	ascbin						; converts string into the ascii characters
+   381 0000050B 80FA00                  	cmp		dl, 0
+   382 0000050E 7514                    	jne		.parseError					; if dl is non-zero, ascbin function is returning an error signal
+   383 00000510 8905                    	mov		word[di], ax				; store the ascii characters to the array
+   384 00000512 81C70200                	add		di, 2
+   385 00000516 41                      	inc		cx							; cx counts number of times the loop excuted, counting length of the array
+   386 00000517 EBE4                    	jmp		.parseLoop
+   387                                  
+   388                                  .parseStore
+   389 00000519 89CE                    	mov		si, cx
+   390 0000051B 8B7E08                  	mov		di,	word[bp+8]				; di points to the address holding length of the array
+   391 0000051E 8935                    	mov		[di], si					; array length updated
+   392 00000520 58                      	pop		ax
+   393 00000521 E90300                  	jmp		.parseDone
+   394                                  
+   395                                  .parseError
+   396 00000524 58                      	pop		ax
+   397 00000525 B0FF                    	mov		al, -1						; returning al with FF triggers an error sign
+   398                                  
+   399                                  .parseDone
+   400 00000527 5F                      	pop		di	
+   401 00000528 5E                      	pop		si
+   402 00000529 5B                      	pop		bx
+   403 0000052A 59                      	pop		cx
+   404 0000052B 5D                      	pop		bp
+   405 0000052C C3                      	ret
+   406                                  
+   407                                  
+   408                                  
+   409                                  ;--------------------------------------------------------------
+   410                                  ;--                       PrintArray()                       --
+   411                                  ;--															 --
+   412                                  ;-- Displays an array in memory to the screen				 --
+   413                                  ;-- Inputs:	Array - Pointer to an array in memory			 -- 
+   414                                  ;--			Length - Length of the array					 --
+   415                                  ;-- Outputs:  Array displayed to screen						 --
+   416                                  ;-- Returns: None											 --
+   417                                  ;-- Calls: binasc, dspmsg, dspout							 --
+   418                                  ;--------------------------------------------------------------
+   419                                  PrintArray
+   420 0000052D 55                      	push	bp
+   421 0000052E 89E5                    	mov		bp, sp
+   422                                  
+   423                                  ;	push	word [bp+6]
+   424                                  ;	push	word [bp+4]
+   425                                  ;	call	libPrintArray
+   426                                  ;	add	sp, 4
+   427                                  
+   428 00000530 56                      	push	si
+   429 00000531 50                      	push	ax
+   430 00000532 51                      	push	cx
+   431 00000533 31C9                    	xor		cx, cx
+   432 00000535 8B7604                  	mov		si,	word[bp+4]					; si points to the number array
+   433 00000538 8B7E06                  	mov		di,	word[bp+6]					; di holds length of the array
+   434                                  	
+   435                                  .loopBinasc
+   436 0000053B 8B04                    	mov		ax, word[si]					; ax hold the 16-bit signed integer to be converted
+   437 0000053D E8(0000)                	call	binasc							; converts binary to ascii
+   438                                  
+   439                                  .printJob
+   440 00000540 8A17                    	mov		dl, byte[bx]					; bx holds offset of first nonblank character of the string
+   441 00000542 B600                    	mov		dh, 0
+   442 00000544 E8(0000)                	call	dspout
+   443 00000547 43                      	inc		bx								; to print out the next character on the string
+   444 00000548 E2F6                    	loop	.printJob						; binasc returns cl, number of nonblank characters generated, so print characters cl times
+   445 0000054A B220                    	mov		dl, 20h
+   446 0000054C B600                    	mov		dh, 0
+   447 0000054E E8(0000)                	call	dspout
+   448                                  
+   449                                  .continueLoop
+   450 00000551 81C60200                	add		si, 2							; increment the word
+   451 00000555 4F                      	dec		di								; di is acting as a counter in loopBinasc
+   452 00000556 81FF0000                	cmp		di, 0
+   453 0000055A 77DF                    	ja		.loopBinasc
+   454 0000055C 7400                    	je		.printDone
+   455                                  
+   456                                  .printDone
+   457 0000055E 59                      	pop		cx
+   458 0000055F 58                      	pop		ax
+   459 00000560 5E                      	pop		si
+   460 00000561 5D                      	pop		bp
+   461 00000562 C3                      	ret
+   462                                  
+   463                                  ;--------------------------------------------------------------
+   464                                  ;--                         HeapSort()                       --
+   465                                  ;--									                         --
+   466                                  ;--  Sorts an array in memory with the heap sort algorithm	 --
+   467                                  ;--  Inputs: Array - Pointer to a heap(an array) in memory	 --
+   468                                  ;--  		Length - Length of the array					 --
+   469                                  ;--  Outputs:  CompareCount, SwapCount						 --
+   470                                  ;--  Returns: None											 --
+   471                                  ;--  Calls: Heapify											 --
+   472                                  ;--------------------------------------------------------------
+   473                                  HeapSort
+   474 00000563 55                      	push	bp
+   475 00000564 89E5                    	mov		bp, sp
+   476                                  ;	push	word [bp+6]
+   477                                  ;	push	word [bp+4]
+   478                                  ;	call	libHeapSort
+   479                                  ;	add		sp, 4
+   480                                  ;	pop		bp
+   481                                  ;	ret
+   482 00000566 60                      	pusha
+   483 00000567 C706[8A03]0000          	mov		word[SwapCount], 0
+   484 0000056D C706[8803]0000          	mov		word[CompareCount], 0
+   485 00000573 31DB                    	xor		bx, bx
+   486 00000575 8B7E06                  	mov		di, word[bp+6]
+   487 00000578 8B5E04                  	mov		bx, word[bp+4]
+   488 0000057B 89FE                    	mov		si, di
+   489 0000057D D1EE                    	shr		si, 1
+   490                                  
+   491                                  .heapConvert
+   492 0000057F 57                      	push	di
+   493 00000580 56                      	push	si
+   494 00000581 53                      	push	bx
+   495 00000582 E83400                  	call	Heapify						; Heapify(Array,i,length)
+   496 00000585 5B                      	pop		bx
+   497 00000586 5E                      	pop		si
+   498 00000587 5F                      	pop		di
+   499 00000588 4E                      	dec		si
+   500 00000589 81FE0000                	cmp		si, 0						; for i=Length/2 downto 1
+   501 0000058D 77F0                    	ja		.heapConvert
+   502 0000058F 89FE                    	mov		si, di
+   503                                  	
+   504                                  .reconstruct
+   505 00000591 D1E7                    	shl		di, 1
+   506 00000593 8B09                    	mov		cx, word[bx+di]				; Array[i+1]
+   507 00000595 8B5702                  	mov		dx, word[bx+2]
+   508 00000598 8911                    	mov		word[bx+di], dx				; swap(Array[1], Array[i+1])
+   509 0000059A 894F02                  	mov		word[bx+2], cx
+   510 0000059D FF06[8A03]              	inc		word[SwapCount]
+   511 000005A1 D1EF                    	shr		di, 1
+   512 000005A3 4F                      	dec		di
+   513 000005A4 B90100                  	mov		cx,	1
+   514 000005A7 57                      	push		di
+   515 000005A8 51                      	push		cx
+   516 000005A9 53                      	push		bx
+   517 000005AA E80C00                  	call		Heapify						; Heapify(Array,1,i)
+   518 000005AD 5B                      	pop		bx
+   519 000005AE 59                      	pop		cx
+   520 000005AF 5F                      	pop		di
+   521 000005B0 81FF0100                	cmp		di, 1						; for i=length-1 downto 1
+   522 000005B4 77DB                    	ja		.reconstruct
+   523                                  
+   524                                  .heapDone
+   525 000005B6 61                      	popa
+   526 000005B7 5D                      	pop		bp
+   527 000005B8 C3                      	ret
+   528                                  
+   529                                  
+   530                                  ;--------------------------------------------------------------
+   531                                  ;--                         Heapify()                        --
+   532                                  ;--									                         --
+   533                                  ;--  Converts an array to a heap							 --
+   534                                  ;--  Inputs: Array - Pointer to a heap(an array) in memory	 --
+   535                                  ;--  		Current - Current index in the heap				 --
+   536                                  ;--  		Length - Length of the heap						 --
+   537                                  ;--  Outputs:  Array is correctly converted to a heap,		 --
+   538                                  ;--  CompareCount and SwapCount updated appropriately		 --
+   539                                  ;--  Returns: None											 --
+   540                                  ;--  Calls: Heapify											 --
+   541                                  ;--------------------------------------------------------------
+   542                                  Heapify
+   543 000005B9 55                      	push	bp
+   544 000005BA 89E5                    	mov		bp, sp
+   545                                  
+   546                                  ;	push	word [bp+8]
+   547                                  ;	push	word [bp+6]
+   548                                  ;	push	word [bp+4]
+   549                                  ;	call	libHeapify
+   550                                  ;	add	sp, 6
+   551 000005BC 60                      	pusha
+   552                                  	
+   553 000005BD 8B5608                  	mov		dx, [bp+8]
+   554 000005C0 8B6E06                  	mov		bp, [bp+6]
+   555                                  ;	mov		bx, [bp+4]
+   556                                  
+   557 000005C3 89EE                    	mov		si, bp
+   558 000005C5 01F6                    	add		si, si						; left = current*2
+   559                                  	
+   560                                  .Condi1
+   561 000005C7 FF06[8803]              	inc		word[CompareCount]
+   562 000005CB 39D6                    	cmp		si, dx						; if left <= length
+   563 000005CD 7715                    	ja		.heapElse
+   564 000005CF D1E6                    	shl		si, 1
+   565 000005D1 8B08                    	mov		cx, word[bx+si]
+   566 000005D3 89EF                    	mov		di, bp
+   567 000005D5 D1E7                    	shl		di, 1
+   568 000005D7 8B01                    	mov		ax, word[bx+di]
+   569 000005D9 D1EE                    	shr		si, 1
+   570 000005DB 39C1                    	cmp		cx, ax						; if Array[left] > Array[current]
+   571 000005DD 7E05                    	jle		.heapElse
+   572 000005DF 89F7                    	mov		di, si						; largest = left
+   573 000005E1 E90200                  	jmp		.Condi2
+   574                                  	
+   575                                  .heapElse
+   576 000005E4 89EF                    	mov		di, bp						; largest = current
+   577                                  	
+   578                                  .Condi2
+   579 000005E6 46                      	inc		si					; right = left + 1
+   580 000005E7 FF06[8803]              	inc		word[CompareCount]			; just increment in memory
+   581 000005EB 39D6                    	cmp		si, dx						; if right <= length
+   582 000005ED 7712                    	ja		.heapStop
+   583 000005EF D1E6                    	shl		si, 1
+   584 000005F1 8B08                    	mov		cx, word[bx+si]
+   585 000005F3 D1E7                    	shl		di, 1
+   586 000005F5 8B01                    	mov		ax, word[bx+di]
+   587 000005F7 D1EE                    	shr		si, 1
+   588 000005F9 D1EF                    	shr		di, 1
+   589 000005FB 39C1                    	cmp		cx, ax
+   590 000005FD 7E02                    	jle		.heapStop
+   591 000005FF 89F7                    	mov		di, si						; largest = right
+   592                                  	
+   593                                  .heapStop
+   594 00000601 89EE                    	mov		si, bp
+   595 00000603 39F7                    	cmp		di, si
+   596 00000605 741D                    	je		.heapDone	
+   597 00000607 D1E7                    	shl		di, 1
+   598 00000609 D1E6                    	shl		si, 1
+   599 0000060B 8B09                    	mov		cx, word[bx+di]
+   600 0000060D 8B00                    	mov		ax, word[bx+si]
+   601 0000060F FF06[8A03]              	inc		word[SwapCount]
+   602 00000613 8901                    	mov		word[bx+di], ax				; swap
+   603 00000615 8908                    	mov		word[bx+si], cx
+   604 00000617 D1EF                    	shr		di, 1
+   605 00000619 D1EE                    	shr		si, 1
+   606                                  	
+   607                                  .recursiveCall
+   608 0000061B 52                      	push	dx
+   609 0000061C 57                      	push	di
+   610 0000061D 53                      	push	bx
+   611 0000061E E898FF                  	call	Heapify						; recursive call
+   612 00000621 5B                      	pop		bx
+   613 00000622 5F                      	pop		di
+   614 00000623 5A                      	pop		dx
+   615                                  
+   616                                  .heapDone
+   617 00000624 61                      	popa
+   618 00000625 5D                      	pop		bp
+   619 00000626 C3                      	ret
+   620                                  
+   621                                  
+   622                                  ;--------------------------------------------------------------
+   623                                  ;--                      InsertionSort()                     --
+   624                                  ;--										                     --
+   625                                  ;--  Sorts an array with the insertion sort algorithm		 --
+   626                                  ;--  Inputs: Array - Pointer to an array in memory			 --
+   627                                  ;--			 Length - Length of the array					 --
+   628                                  ;--  Outputs:  CompareCount, SwapCount						 --
+   629                                  ;--  Returns: None											 --
+   630                                  ;--  Calls: None											 --
+   631                                  ;--------------------------------------------------------------
+   632                                  InsertionSort
+   633 00000627 55                      	push	bp
+   634 00000628 89E5                    	mov		bp, sp
+   635                                  
+   636                                  ;	push	word [bp+6]
+   637                                  ;	push	word [bp+4]
+   638                                  ;	call	libInsertionSort
+   639                                  ;	add	sp, 4
+   640                                  
+   641 0000062A 51                      	push	cx
+   642 0000062B 53                      	push	bx
+   643 0000062C 52                      	push	dx
+   644 0000062D 57                      	push	di
+   645 0000062E 56                      	push	si
+   646 0000062F 50                      	push	ax
+   647 00000630 8B4E06                  	mov		cx, word[bp+6]
+   648 00000633 8B5E04                  	mov		bx, word[bp+4]
+   649 00000636 89DA                    	mov		dx, bx
+   650                                  
+   651                                  .bigLoop
+   652 00000638 8B3F                    	mov		di, word[bx]				; for i to length-1
+   653 0000063A 53                      	push		bx
+   654                                  	
+   655                                  .smallLoop
+   656 0000063B 39D3                    	cmp		bx, dx						; while j>0
+   657 0000063D 761A                    	jbe		.endBigLoop
+   658 0000063F FF06[8803]              	inc		word[CompareCount]			
+   659 00000643 397FFE                  	cmp		word[bx-2], di				; while Array[j-1] > index
+   660 00000646 7E11                    	jle		.endBigLoop
+   661 00000648 FF06[8A03]              	inc		word[SwapCount]
+   662 0000064C 8B77FE                  	mov		si, word[bx-2]				; array[j] = array[j-1]
+   663 0000064F 8937                    	mov		word[bx], si
+   664 00000651 81EB0200                	sub		bx, 2
+   665 00000655 89DE                    	mov		si,	bx
+   666 00000657 EBE2                    	jmp		.smallLoop
+   667                                  	
+   668                                  .endBigLoop
+   669 00000659 5B                      	pop		bx
+   670 0000065A 893C                    	mov		word[si], di				; array[j] = index
+   671 0000065C FF06[8A03]              	inc		word[SwapCount]			
+   672 00000660 81C30200                	add		bx, 2
+   673 00000664 49                      	dec		cx
+   674 00000665 81F90000                	cmp		cx, 0
+   675 00000669 77CD                    	ja		.bigLoop
+   676                                  	
+   677 0000066B 58                      	pop		ax
+   678 0000066C 5E                      	pop		si
+   679 0000066D 5F                      	pop		di
+   680 0000066E 5A                      	pop		dx
+   681 0000066F 5B                      	pop		bx
+   682 00000670 59                      	pop		cx
+   683 00000671 5D                      	pop		bp
+   684 00000672 C3                      	ret
+   685                                  
+   686                                  ;====== SECTION 9: MP2 Debugging Exercises ================================
+   687                                  
+   688                                  ;--------------------------------------------------------------
+   689                                  ;--                          CToF()                          --
+   690                                  ;--------------------------------------------------------------
+   691                                  CToF
+   692 00000673 53                      	push	bx
+   693 00000674 BB0900                  	mov	bx, 9
+   694 00000677 F7EB                    	imul	bx
+   695 00000679 BB0500                  	mov	bx, 5
+   696 0000067C F7FB                    	idiv	bx
+   697 0000067E 052000                  	add	ax, 32
+   698 00000681 5B                      	pop	bx
+   699 00000682 C3                      	ret
+   700                                  
+   701                                  
+   702                                  ;--------------------------------------------------------------
+   703                                  ;--                       Factorial()                        --
+   704                                  ;--------------------------------------------------------------
+   705                                  Factorial
+   706 00000683 51                      	push	cx
+   707 00000684 89C1                    	mov     cx, ax
+   708 00000686 31C0                    	xor	ax, ax
+   709 00000688 B80100                  	mov	ax, 1
+   710 0000068B 81F90100                	cmp	cx, 1
+   711 0000068F 7604                    	jbe	.FactorialDone
+   712                                  
+   713                                  .FactorialLoop
+   714 00000691 F7E1                            mul     cx
+   715 00000693 E2FC                            loop	.FactorialLoop
+   716                                   
+   717                                  .FactorialDone
+   718 00000695 59                              pop	cx
+   719 00000696 C3                              ret
+   720                                  
+   721                                  ;--------------------------------------------------------------
+   722                                  ;--                    CalculateGrades()                     --
+   723                                  ;--------------------------------------------------------------
+   724                                  CalculateGrades
+   725 00000697 51                      	push	cx
+   726 00000698 56                      	push	si
+   727                                  
+   728                                  .StudentsLoop
+   729 00000699 31C0                    	xor	ax, ax			; reset ax
+   730 0000069B 51                      	push	cx
+   731 0000069C B90A00                  	mov	cx, 10			
+   732                                  
+   733                                  .AddGradesLoop
+   734 0000069F BB0000                  	mov	bx, 0				
+   735 000006A2 021C                    	add	bl, [si]
+   736 000006A4 46                      	inc	si
+   737 000006A5 01D8                    	add	ax, bx
+   738 000006A7 E2F6                    	loop	.AddGradesLoop
+   739 000006A9 59                      	pop	cx
+   740                                  
+   741 000006AA 3D8403                  	cmp	ax, 900			
+   742 000006AD 7314                    	jae	.A
+   743 000006AF 3D2003                  	cmp	ax, 800
+   744 000006B2 7314                    	jae	.B
+   745 000006B4 3DBC02                  	cmp	ax, 700
+   746 000006B7 7314                    	jae	.C
+   747 000006B9 3D5802                  	cmp	ax, 600
+   748 000006BC 7314                    	jae	.D
+   749 000006BE E91600                  	jmp	.F
+   750                                  	
+   751 000006C1 B400                    	mov	ah, 0
+   752                                  
+   753                                  .A
+   754 000006C3 B041                    	mov	al, 'A'
+   755 000006C5 E91100                  	jmp	.StoreGrade
+   756                                  
+   757                                  .B
+   758 000006C8 B042                    	mov	al, 'B'
+   759 000006CA E90C00                  	jmp	.StoreGrade
+   760                                  
+   761                                  .C
+   762 000006CD B043                    	mov	al, 'C'
+   763 000006CF E90700                  	jmp	.StoreGrade
+   764                                  
+   765                                  .D
+   766 000006D2 B044                    	mov	al, 'D'
+   767 000006D4 E90200                  	jmp	.StoreGrade
+   768                                  
+   769                                  .F
+   770 000006D7 B046                    	mov	al, 'F'
+   771                                  
+   772                                  .StoreGrade
+   773 000006D9 8804                    	mov	[si], al
+   774 000006DB 46                      	inc	si
+   775 000006DC E2BB                    	loop	.StudentsLoop
+   776                                  
+   777 000006DE 5E                      	pop	si
+   778 000006DF 59                      	pop	cx
+   779 000006E0 C3                      	ret
+   780                                  

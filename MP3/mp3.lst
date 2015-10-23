@@ -1,0 +1,779 @@
+     1                                  ;MP3 -Falling Alphabets
+     2                                  ;  Seunghoon Kim
+     3                                  ;  10/12/2003
+     4                                  ;
+     5                                  ; Author:  Wee Horng Ang 2003
+     6                                  ; University of Illinois, Urbana-Champaign
+     7                                  ; Dept. of Electrical and Computer Engineering
+     8                                  ;
+     9                                  ; Version 1.0
+    10                                  
+    11                                          BITS    16
+    12                                  
+    13                                  ;====== SECTION 1: Define constants =======================================
+    14                                  		Escape	EQU		1Bh
+    15                                          CR      EQU     0Dh             ; Carriage return
+    16                                          LF      EQU     0Ah             ; Line feed
+    17                                          BS      EQU     08h             ; Backspace
+    18                                  
+    19                                  
+    20                                          KVEC    EQU     0024h           ; Location of Keyboard Vector
+    21                                          TVEC    EQU     0070h           ; Location of User Timer Vector
+    22                                          ROWS    EQU     25              ; Number of rows on screen
+    23                                          COLS    EQU     80              ; Number of columns on screen
+    24                                  
+    25                                  
+    26                                  	;the masks for various flags
+    27                                  	EXIT_FLAG		equ	000001b
+    28                                  	RIGHT_KEY_FLAG		equ	000010b
+    29                                  	LEFT_KEY_FLAG		equ	000100b
+    30                                  	RIGHT_BUTTON_FLAG	equ	001000b
+    31                                  	LEFT_BUTTON_FLAG	equ	010000b
+    32                                  	USE_PARPORT_FLAG	equ	100000b
+    33                                  
+    34                                  
+    35                                  	;length of array (in elements) use to store letters to
+    36                                  	FALLING_LETTER_ARRAY_LENGTH	equ	5
+    37                                  	CHAR		EQU		0
+    38                                  	ROW		equ		1
+    39                                  	COL		equ		2
+    40                                  
+    41                                  	;The scancodes for various keys
+    42                                  	LEFT_SCANCODE	equ 	75	;scancode for left arrow
+    43                                  	RIGHT_SCANCODE	equ 	77	;scancode for right arrow
+    44                                  	EXIT_SCANCODE	equ	1	;scancode for esc key
+    45                                  
+    46                                  ;====== SECTION 2: Declare external procedures ============================
+    47                                  
+    48                                  EXTERN  ascbin, binasc, kbdin, kbdine, dspout, dspmsg, mp3xit
+    49                                  
+    50                                  EXTERN  libMain, libInstallISR, libRestoreISR, libInitVideo, libKbdISR
+    51                                  EXTERN	libOutputParport, libUpdateBucket, libDisplayLevel, libClearScreenBottom
+    52                                  EXTERN	libRandom, libAddNewLetter, libDisplayBucket, libFallLetters
+    53                                  EXTERN	libInitParport, libReadParport
+    54                                  
+    55                                  
+    56                                  GLOBAL	Main, InstallISR, RestoreISR, InitVideo
+    57                                  GLOBAL	TmrISR, KbdISR
+    58                                  GLOBAL	OutputParport, UpdateBucket, DisplayLevel, ClearScreenBottom
+    59                                  GLOBAL	Random, AddNewLetter, DisplayBucket, FallLetters
+    60                                  GLOBAL	InitParport, ReadParport
+    61                                  
+    62                                  
+    63                                  GLOBAL  SavKOff, SavKSeg, SavTOff, SavTSeg, TickCount
+    64                                  GLOBAL	StartMsg, Flags, Level, FallCount, WinMsg
+    65                                  GLOBAL	FallingLetterArray,  NumberTable, BucketPosition
+    66                                  
+    67                                  ;====== SECTION 3: Define stack segment ===================================
+    68                                  
+    69                                  SEGMENT stkseg STACK                    ; *** STACK SEGMENT ***
+    70 00000000 <res 00000200>                  RESB    64*8
+    71                                  stacktop:
+    72                                          RESB    0                       ; NASM bug workaround 
+    73                                  
+    74                                  ;====== SECTION 4: Define code segment ====================================
+    75                                  
+    76                                  SEGMENT code                            ; *** CODE SEGMENT ***
+    77                                  
+    78                                  ;====== SECTION 5: Declare variables for main procedure ===================
+    79 00000000 45434520323931204D-     MP3Msg		db 'ECE 291 MP3 -- The Falling Letters Game','$'
+    80 00000009 5033202D2D20546865-
+    81 00000012 2046616C6C696E6720-
+    82 0000001B 4C6574746572732047-
+    83 00000024 616D6524           
+    84 00000028 594F552057494E2121-     WinMsg		db 'YOU WIN!!','$'
+    85 00000031 24                 
+    86 00000032 446F20796F75207761-     StartMsg	db "Do you want to enable the parallel port? (y/n)", '$'
+    87 0000003B 6E7420746F20656E61-
+    88 00000044 626C65207468652070-
+    89 0000004D 6172616C6C656C2070-
+    90 00000056 6F72743F2028792F6E-
+    91 0000005F 2924               
+    92                                  
+    93                                  
+    94 00000061 00                      TickCount	db	0	;Timer interupt counter
+    95 00000062 00                      FallCount	db	0	;Counter to slow letter movement
+    96 00000063 00                      Level		db	0	;Level of game, goes from 0 to 9
+    97 00000064 28                      BucketPosition	db	40	;Column of left side of bucket
+    98 00000065 00                      Flags		db 	0	;Storage for various flags used by the game
+    99                                  
+   100                                  
+   101 00000066 <res 00000002>          SavTSeg		RESW	1	;Segment of old timer interupt routine
+   102 00000068 <res 00000002>          SavTOff		RESW	1	;Offset of old timer interupt routine
+   103 0000006A <res 00000002>          SavKSeg		RESW	1	;Segment of old timer interupt routine
+   104 0000006C <res 00000002>          SavKOff		RESW	1	;Offset of old timer interupt routine
+   105                                  	
+   106                                  
+   107                                  ;array of infomation for falling letters
+   108 0000006E 00<rept>                FallingLetterArray times FALLING_LETTER_ARRAY_LENGTH*3 db 0
+   109                                  
+   110                                  
+   111                                  ;used by random function
+   112 0000007D <res 00000002>          seed		RESW	1
+   113 0000007F <res 00000002>          random		RESW	1
+   114                                  
+   115                                  
+   116                                  
+   117                                  ;
+   118                                  C	equ 0x01	
+   119                                  D	equ 0x02
+   120                                  E	equ 0x04
+   121                                  G	equ 0x08
+   122                                  F	equ 0x10
+   123                                  A	equ 0x20
+   124                                  B	equ 0x40
+   125                                  
+   126                                  ;Lookup table used for turing on LED's
+   127                                  NumberTable:
+   128 00000081 77                      zero		db A|B|C|D|E|F
+   129 00000082 41                      one		db B|C
+   130 00000083 6E                      two		db A|B|D|E|G
+   131 00000084 6B                      three		db A|B|C|D|G
+   132 00000085 59                      four		db B|C|F|G
+   133 00000086 3B                      five		db A|C|D|F|G
+   134 00000087 3F                      six		db A|C|D|E|F|G
+   135 00000088 61                      seven		db A|B|C
+   136 00000089 7F                      eight		db A|B|C|D|E|F|G
+   137 0000008A 79                      nine		db A|B|C|F|G
+   138                                  
+   139                                  
+   140                                  	
+   141                                  ; You may declare additional variables here
+   142                                  
+   143                                  ;====== SECTION 6: Program initialization =================================
+   144                                  
+   145                                  ..start:
+   146 0000008B 8CC8                            MOV     AX, CS                  ; Initialize Default Segment register
+   147 0000008D 8ED8                            MOV     DS, AX  
+   148 0000008F B8[0000]                        MOV     AX, stkseg              ; Initialize Stack Segment register
+   149 00000092 8ED0                            MOV     SS, AX
+   150 00000094 BC[0002]                        MOV     SP, stacktop            ; Initialize Stack Pointer register
+   151                                  
+   152                                  ;====== SECTION 7: Your subroutines =======================================
+   153                                  
+   154                                  
+   155                                  ;- Main ----------------------------------------------------
+   156                                  Main:
+   157                                  ;	call 	libMain
+   158                                  ;	call	mp3xit
+   159                                  	
+   160 00000097 31DB                    	xor	bx, bx
+   161 00000099 BA[3200]                	mov	dx, StartMsg
+   162 0000009C E8(0000)                	call	dspmsg				; display StartMsg
+   163 0000009F E8(0000)                	call	kbdine
+   164 000000A2 3C79                    	cmp	al, 79h
+   165 000000A4 744E                    	je	.useParallel
+   166                                  	
+   167                                  .initialize
+   168 000000A6 E87C02                  	call	InstallISR
+   169 000000A9 E8FD02                  	call	InitVideo
+   170                                  	
+   171                                  .mainLoop
+   172 000000AC 803E[6300]09            	cmp	byte[Level], 9
+   173 000000B1 775D                    	ja	.quit1				; loop until the game reaches past level 9
+   174 000000B3 803E[6500]01            	cmp	byte[Flags], 01h
+   175 000000B8 745C                    	je	.quit2				; loop stops when ESC is presssed
+   176 000000BA 803E[6100]02            	cmp	byte[TickCount], 2
+   177 000000BF 72EB                    	jb	.mainLoop			; if (TickCount < 2), loop back to mainLoop
+   178 000000C1 802E[6100]02            	sub	byte[TickCount], 2
+   179 000000C6 F606[6500]20            	test	byte[Flags], 20h
+   180 000000CB 7531                    	jnz	.parallelOn
+   181                                  
+   182                                  .mainCheck1	
+   183 000000CD E89D00                  	call	UpdateBucket
+   184 000000D0 E88701                  	call	DisplayLevel
+   185 000000D3 E8DE01                  	call	ClearScreenBottom
+   186 000000D6 E89A01                  	call	DisplayBucket
+   187 000000D9 FE06[6200]              	inc	byte[FallCount]
+   188 000000DD 803E[6200]02            	cmp	byte[FallCount], 2		; if (FallCount >= 9), reset counter
+   189 000000E2 7322                    	jae	.resetFallCount
+   190                                  .mainCheck2
+   191 000000E4 B96400                  	mov	cx, 100
+   192 000000E7 E8CC02                  	call	Random
+   193 000000EA 3D0000                  	cmp	ax, 0
+   194 000000ED 75BD                    	jne	.mainLoop
+   195 000000EF E8A900                  	call	AddNewLetter			; randomly call AddNewLetter
+   196 000000F2 EBB8                    	jmp	.mainLoop
+   197                                  	
+   198                                  .useParallel					; sets/resets USE_PARPORT_FLAG
+   199 000000F4 C606[6500]20            	mov	byte[Flags], 20h		
+   200 000000F9 E82000                  	call	InitParport
+   201 000000FC EBA8                    	jmp	.initialize	
+   202                                  	
+   203                                  .parallelOn					; set of calls executed when parallel port is selected
+   204 000000FE E82600                  	call	ReadParport
+   205 00000101 E85400                  	call	OutputParport
+   206 00000104 EBC7                    	jmp	.mainCheck1
+   207                                  	
+   208                                  .resetFallCount
+   209 00000106 C606[6200]00            	mov	byte[FallCount], 0
+   210 0000010B E8C300                  	call	FallLetters
+   211 0000010E EBD4                    	jmp	.mainCheck2
+   212                                  	
+   213                                  .quit1
+   214 00000110 BA[2800]                	mov	dx, WinMsg			; display WinMsg if game reaches past level 9
+   215 00000113 E8(0000)                	call	dspmsg
+   216                                  	
+   217                                  .quit2
+   218 00000116 E85E02                  	call	RestoreISR
+   219 00000119 E8(0000)                	call	mp3xit
+   220                                  	
+   221                                  
+   222                                  ;- InitParport ----------------------------------------------------
+   223                                  ;- Initializes the parallel port so that it can be used 
+   224                                  ;- Inputs: None 
+   225                                  ;- Outputs: Control port (0x37a) 
+   226                                  ;- Calls: None
+   227                                  InitParport:
+   228                                  ;	call libInitParport
+   229                                  
+   230 0000011C 52                      	push	dx
+   231 0000011D 50                      	push	ax
+   232                                  
+   233 0000011E BA7A03                  	mov	dx, 037Ah		; set control port address to 037A
+   234 00000121 B002                    	mov	al, 02h			; set the ~Autofeed bit on the control port HIGH, everything else LOW
+   235 00000123 EE                      	out	dx, al			; output register AL to the control out latch
+   236                                  
+   237 00000124 58                      	pop	ax
+   238 00000125 5A                      	pop	dx
+   239 00000126 C3                      	ret	
+   240                                  
+   241                                  
+   242                                  ;- ReadParport ----------------------------------------------------
+   243                                  ;- Reads in the input from the parallel port 
+   244                                  ;- Inputs: Parallel Port
+   245                                  ;- Outputs: [Flags] - Movement Flags
+   246                                  ;- Calls: NONE
+   247                                  ReadParport:
+   248                                  ;	call libReadParport
+   249                                  
+   250 00000127 52                      	push	dx
+   251 00000128 50                      	push	ax
+   252                                  	
+   253 00000129 BA7903                  	mov	dx, 0379h		; set status port address to 0379
+   254 0000012C EC                      	in	al, dx			; input into register AL via the status in buffer
+   255                                  	
+   256 0000012D A830                    	test	al, 110000b		; test if both keys are on
+   257 0000012F 741F                    	jz	.release
+   258 00000131 A820                    	test	al, 100000b		; test if only right key is on
+   259 00000133 740B                    	jz	.updateRight
+   260 00000135 A810                    	test	al, 010000b		; test if only left key is on
+   261 00000137 740F                    	jz	.updateLeft
+   262 00000139 A830                    	test	al, 110000b		; test if neither keys are on
+   263 0000013B 7513                    	jnz	.release
+   264 0000013D E91500                  	jmp	.ReadDone
+   265                                  	
+   266                                  .updateRight	
+   267 00000140 800E[6500]08            	or	byte[Flags], 08h	; set the RIGHT_BUTTON_FLAG (to 1) in [Flags]
+   268 00000145 E90D00                  	jmp	.ReadDone
+   269                                  	
+   270                                  .updateLeft
+   271 00000148 800E[6500]10            	or	byte[Flags], 10h	; set the LEFT_BUTTON_FLAG (to 1) in [Flags]
+   272 0000014D E90500                  	jmp	.ReadDone
+   273                                  
+   274                                  .release
+   275 00000150 8026[6500]26            	and	byte[Flags], 100110b	; clear both LEFT_BUTTON_FLAG and RIGHT_BUTTON_FLAG (to 0) in [Flags]
+   276                                  	
+   277                                  .ReadDone
+   278 00000155 58                      	pop	ax
+   279 00000156 5A                      	pop	dx
+   280 00000157 C3                      	ret
+   281                                  
+   282                                  
+   283                                  ;- OutputParport ----------------------------------------------------
+   284                                  ;- Outputs the level onto the 7 segment LED on the parallel port. 
+   285                                  ;- Inputs: [Level] - current level of the game 
+   286                                  ;- 	   NumberTable - lookup table
+   287                                  ;- Outputs: Writes to data port (0x378)
+   288                                  ;- Calls: None 
+   289                                  OutputParport:
+   290                                  ;	call libOutputParport
+   291                                  ;	ret
+   292                                  
+   293 00000158 53                      	push	bx
+   294 00000159 50                      	push	ax
+   295 0000015A 52                      	push	dx
+   296                                  
+   297 0000015B 31DB                    	xor	bx, bx
+   298 0000015D 8A1E[6300]              	mov	bl, byte[Level]
+   299 00000161 8A87[8100]              	mov	al, byte[NumberTable+bx]; set AL to a corresponding level value in numbertable
+   300 00000165 BA7803                  	mov	dx, 0378h		; set status port address to 0378
+   301 00000168 EE                      	out	dx, al			; output a byte from register aL to the Data Out Latch
+   302                                  
+   303 00000169 5A                      	pop	dx
+   304 0000016A 58                      	pop	ax
+   305 0000016B 5B                      	pop	bx
+   306                                  
+   307 0000016C C3                      	ret
+   308                                  
+   309                                  
+   310                                  ;- UpdateBucket ----------------------------------------------------
+   311                                  ;- Updates the position of the bucket 
+   312                                  ;- Inputs: [Flags] - Movement Flags
+   313                                  ;- Outputs: [BucketPosition] - current position of the bucket
+   314                                  ;- Calls: NONE
+   315                                  UpdateBucket:
+   316                                  ;	call libUpdateBucket
+   317                                  
+   318 0000016D 50                      	push	ax
+   319 0000016E A0[6500]                	mov	al, [Flags]
+   320                                  
+   321 00000171 A814                    	test	al, 00010100b			; check the left flags
+   322 00000173 7507                    	jnz	.updateLeft
+   323 00000175 A80A                    	test	al, 00001010b			; check the right flags
+   324 00000177 7515                    	jnz	.updateRight
+   325 00000179 E91D00                  	jmp	.updateBucketEnd
+   326                                  
+   327                                  .updateLeft
+   328 0000017C A80A                    	test	al, 00001010b			; if both left and right flags are on, no move
+   329 0000017E 7519                    	jnz	.updateBucketEnd
+   330 00000180 803E[6400]05            	cmp	byte[BucketPosition], 5		; left boundary for the movement
+   331 00000185 7612                    	jbe	.updateBucketEnd
+   332 00000187 FE0E[6400]              	dec	byte[BucketPosition]		; move to the left
+   333 0000018B E90B00                  	jmp	.updateBucketEnd
+   334                                  
+   335                                  .updateRight
+   336 0000018E 803E[6400]46            	cmp	byte[BucketPosition], 70	; right boundary for the movement
+   337 00000193 7304                    	jae	.updateBucketEnd
+   338 00000195 FE06[6400]              	inc	byte[BucketPosition]		; move to the right
+   339                                  
+   340                                  .updateBucketEnd
+   341 00000199 58                      	pop	ax
+   342 0000019A C3                      	ret
+   343                                  
+   344                                  
+   345                                  ;- AddNewLetter ----------------------------------------------------
+   346                                  ;- Adds a new letter on top of the screen 
+   347                                  ;- Inputs: None
+   348                                  ;- Outputs: None
+   349                                  ;- Calls: Random
+   350                                  AddNewLetter:
+   351                                  ;	call 	libAddNewLetter
+   352                                  
+   353 0000019B 50                      	push	ax
+   354 0000019C 53                      	push	bx
+   355 0000019D 51                      	push	cx
+   356                                  
+   357 0000019E BB[6E00]                	mov	bx, FallingLetterArray
+   358 000001A1 B90500                  	mov	cx, FALLING_LETTER_ARRAY_LENGTH
+   359                                  .lp	
+   360 000001A4 803F41                  	cmp	byte[bx], 41h			; see if any alphabet is stored in char
+   361 000001A7 731E                    	jnb	.skip
+   362                                  
+   363 000001A9 51                      	push	cx
+   364                                  
+   365 000001AA B91A00                  	mov	cx, 26
+   366 000001AD E80602                  	call	Random				; randomly generate an alphabet
+   367 000001B0 0441                    	add	al, 41h
+   368 000001B2 8807                    	mov	byte[bx+CHAR], al		; and store in char
+   369 000001B4 C6470100                	mov	byte[bx+ROW], 00h		; set row to 0
+   370                                  
+   371 000001B8 B94700                  	mov	cx, 71
+   372 000001BB E8F801                  	call	Random				; randomly generate an integer between 0 and 70
+   373 000001BE 0405                    	add	al, 5
+   374 000001C0 884702                  	mov	byte[bx+COL], al		; and store in col
+   375                                  
+   376 000001C3 59                      	pop	cx
+   377 000001C4 E90600                  	jmp	.AddNewLetterEnd		; ends if one is written
+   378                                  .skip
+   379 000001C7 81C30300                	add	bx, 3
+   380 000001CB E2D7                    	loop	.lp				; loops until it finally writes one or all arrays are filled
+   381                                  
+   382                                  .AddNewLetterEnd
+   383 000001CD 59                      	pop	cx
+   384 000001CE 5B                      	pop	bx
+   385 000001CF 58                      	pop	ax
+   386 000001D0 C3                      	ret
+   387                                  
+   388                                  
+   389                                  ;- FallLetters ----------------------------------------------------
+   390                                  ;- Make the letter fall, and checks if the bucket catches the letter. 
+   391                                  ;- Inputs: [BucketPosition] - current position of the bucket
+   392                                  ;- Outputs: [Level] - Game Level
+   393                                  ;- Calls: NONE
+   394                                  FallLetters:
+   395                                  ;	call libFallLetters
+   396                                  ;	ret
+   397                                  
+   398 000001D1 53                      	push	bx
+   399 000001D2 51                      	push	cx
+   400 000001D3 50                      	push	ax
+   401 000001D4 06                      	push	es
+   402 000001D5 55                      	push	bp
+   403 000001D6 52                      	push	dx
+   404                                  
+   405 000001D7 B800B8                  	mov	ax, 0B800h			; set the segment address for video memory
+   406 000001DA 8EC0                    	mov	es, ax
+   407 000001DC BB[6E00]                	mov	bx, FallingLetterArray
+   408 000001DF B90500                  	mov	cx, FALLING_LETTER_ARRAY_LENGTH
+   409 000001E2 43                      	inc	bx
+   410                                  
+   411                                  .lp
+   412 000001E3 31C0                    	xor	ax, ax
+   413 000001E5 807FFF41                	cmp	byte[bx-1], 41h			; check if any alphabet is stored in char
+   414 000001E9 7262                    	jb	.fallEnd
+   415 000001EB 8A07                    	mov	al, byte[bx]
+   416 000001ED B250                    	mov	dl, 80				; set the position on the video memory
+   417 000001EF F6E2                    	mul	dl				; according to the row and col value in array
+   418 000001F1 31D2                    	xor	dx, dx
+   419 000001F3 8A5701                  	mov	dl, byte[bx+1]
+   420 000001F6 01D0                    	add	ax, dx
+   421 000001F8 D1E0                    	shl	ax, 1
+   422 000001FA 89C5                    	mov	bp, ax
+   423 000001FC 26C746000000            	mov	word[es:bp], 0000h		; erase the original letter position
+   424 00000202 FE07                    	inc	byte[bx]
+   425 00000204 803F13                  	cmp	byte[bx], 19
+   426 00000207 741F                    	je	.checkIn			; if the letter is in green area, no need to redraw in updated position
+   427                                  
+   428 00000209 31C0                    	xor	ax, ax
+   429 0000020B 8A07                    	mov	al, byte[bx]
+   430 0000020D B250                    	mov	dl, 80				; set the position on the video memory
+   431 0000020F F6E2                    	mul	dl				; according to the row and col value in array
+   432 00000211 31D2                    	xor	dx, dx
+   433 00000213 8A5701                  	mov	dl, byte[bx+1]
+   434 00000216 01D0                    	add	ax, dx
+   435 00000218 D1E0                    	shl	ax, 1
+   436 0000021A 89C5                    	mov	bp, ax
+   437                                  
+   438 0000021C 8A47FF                  	mov	al, byte[bx-1]
+   439 0000021F B40F                    	mov	ah, 0Fh	
+   440 00000221 26894600                	mov	word[es:bp], ax			; draw the letter in updated position
+   441 00000225 E92500                  	jmp	.fallEnd	
+   442                                  
+   443                                  .checkIn
+   444 00000228 31D2                    	xor	dx, dx				; if the ltter is in green area
+   445 0000022A 8A5701                  	mov	dl, byte[bx+1]
+   446 0000022D C60700                  	mov	byte[bx], 0			; reset row
+   447 00000230 C647FF00                	mov	byte[bx-1], 0			; reset char
+   448 00000234 C6470100                	mov	byte[bx+1], 0			; reset column
+   449                                  
+   450 00000238 3816[6400]              	cmp	byte[BucketPosition], dl	; check if the letter is inside the bucket
+   451 0000023C 770F                    	ja	.fallEnd
+   452 0000023E 8A36[6400]              	mov	dh, byte[BucketPosition]
+   453 00000242 80C606                  	add	dh, 6
+   454 00000245 38D6                    	cmp	dh, dl
+   455 00000247 7204                    	jb	.fallEnd
+   456 00000249 FE06[6300]              	inc	byte[Level]			; increase the level if the letter is in the bucket
+   457                                  
+   458                                  .fallEnd
+   459 0000024D 81C30300                	add	bx, 3
+   460 00000251 E290                    	loop	.lp
+   461                                  
+   462 00000253 5A                      	pop	dx
+   463 00000254 5D                      	pop	bp
+   464 00000255 07                      	pop	es
+   465 00000256 58                      	pop	ax
+   466 00000257 59                      	pop	cx
+   467 00000258 5B                      	pop	bx
+   468                                  
+   469 00000259 C3                      	ret
+   470                                  
+   471                                  
+   472                                  ;- DisplayLevel ----------------------------------------------------
+   473                                  ;- Display the level on the top left corner of the screen 
+   474                                  ;- Inputs: [Level] - Game level
+   475                                  ;- Outputs: Draws to screen
+   476                                  ;- Calls: 
+   477                                  DisplayLevel:
+   478                                  ;	call libDisplayLevel
+   479                                  
+   480 0000025A 50                      	push	ax
+   481 0000025B 06                      	push	es
+   482 0000025C 53                      	push	bx
+   483                                  
+   484 0000025D B800B8                  	mov	ax, 0B800h		; set the segment address for video memory
+   485 00000260 8EC0                    	mov	es, ax
+   486 00000262 BB0000                  	mov	bx, 0000h		; set the offset address to 0
+   487                                  
+   488 00000265 A0[6300]                	mov	al, byte[Level]
+   489 00000268 0430                    	add	al, 30h			; convert the level value to ascii and store in al
+   490 0000026A B49F                    	mov	ah, 9Fh			; set to blue backgound and white forground
+   491                                  
+   492 0000026C 268907                  	mov	word[es:bx], ax		; write the level number into the video memory
+   493                                  
+   494 0000026F 5B                      	pop	bx
+   495 00000270 07                      	pop	es
+   496 00000271 58                      	pop	ax
+   497                                  
+   498 00000272 C3                      	ret
+   499                                  
+   500                                  
+   501                                  ;- DisplayBucket ----------------------------------------------------
+   502                                  ;- Draw image of bucket to correct part of the screen 
+   503                                  ;- Inputs: [BucketPosition] - current position of the bucket
+   504                                  ;- Outputs: NONE
+   505                                  ;- Calls: NONE
+   506                                  DisplayBucket:
+   507                                  ;	call libDisplayBucket
+   508                                  ;	ret
+   509 00000273 50                      	push	ax	
+   510 00000274 53                      	push	bx
+   511 00000275 51                      	push	cx
+   512 00000276 06                      	push	es
+   513                                  
+   514 00000277 31DB                    	xor	bx, bx
+   515 00000279 8A1E[6400]              	mov	bl, byte[BucketPosition]; set the offset addresss to the column value the BucketPosition holds
+   516 0000027D D0E3                    	shl	bl, 1
+   517 0000027F 81C3E00B                	add	bx, 80*19*2		; move the offset addresss to 20th line
+   518 00000283 50                      	push	ax
+   519 00000284 B800B8                  	mov	ax, 0B800h		; set the segment address for video memory
+   520 00000287 8EC0                    	mov	es, ax
+   521 00000289 58                      	pop	ax
+   522 0000028A B90500                  	mov	cx, 5
+   523                                  
+   524                                  .lp1
+   525 0000028D 26C707231C              	mov	word[es:bx], 1C23h	; write the light red '#' letter with blue background
+   526 00000292 81C30C00                	add	bx, 12			; 7 characters wide, so move 6 spaces to the right
+   527 00000296 26C707231C              	mov	word[es:bx], 1C23h
+   528 0000029B 81C39400                	add	bx, 148			; move to the next line
+   529 0000029F E2EC                    	loop	.lp1			; finish drawing the first 5 lines
+   530                                  
+   531 000002A1 B90700                  	mov	cx, 7
+   532                                  .lp2
+   533 000002A4 26C707231C              	mov	word[es:bx], 1C23h	; draw the bottom part of the bucket
+   534 000002A9 81C30200                	add	bx, 2
+   535 000002AD E2F5                    	loop	.lp2
+   536                                  
+   537 000002AF 07                      	pop	es
+   538 000002B0 59                      	pop	cx
+   539 000002B1 5B                      	pop	bx
+   540 000002B2 58                      	pop	ax
+   541                                  
+   542 000002B3 C3                      	ret
+   543                                  
+   544                                  
+   545                                  ;- ClearScreenBottom ----------------------------------------------------
+   546                                  ;- Clears the bottom of the screen. 
+   547                                  ;- Inputs: None
+   548                                  ;- Outputs: Draws to screen
+   549                                  ;- Calls: NONE
+   550                                  ClearScreenBottom:
+   551                                  ;	call libClearScreenBottom
+   552                                  ;	ret
+   553                                  
+   554 000002B4 53                      	push	bx
+   555 000002B5 51                      	push	cx
+   556 000002B6 50                      	push	ax
+   557 000002B7 06                      	push	es
+   558                                  
+   559 000002B8 BBE00B                  	mov	bx, 80*19*2		; set the offset address to the start of the green area
+   560 000002BB B9E001                  	mov	cx, 80*6
+   561 000002BE B800B8                  	mov	ax, 0B800h		; set the segment address for video memory
+   562 000002C1 8EC0                    	mov	es, ax
+   563                                  
+   564                                  .lp
+   565 000002C3 26C7070022              	mov	word[es:bx], 2200h	; clear the bottom area to a green background
+   566 000002C8 81C30200                	add	bx, 2
+   567 000002CC E2F5                    	loop	.lp
+   568                                  
+   569 000002CE 07                      	pop	es
+   570 000002CF 58                      	pop	ax
+   571 000002D0 59                      	pop	cx
+   572 000002D1 5B                      	pop	bx
+   573                                  
+   574 000002D2 C3                      	ret
+   575                                  
+   576                                  
+   577                                  ;- KbdISR ----------------------------------------------------
+   578                                  ;- Interrupt service routine to handle keyboard interrupt events 
+   579                                  ;- Inputs: Keyboard port
+   580                                  ;- Outputs: [Flags] - Movement Flags
+   581                                  ;- Calls: NONE
+   582                                  KbdISR:
+   583                                  ;	jmp 	libKbdISR
+   584                                  
+   585 000002D3 53                      	push	bx
+   586 000002D4 50                      	push 	ax 			; Save registers
+   587 000002D5 1E                      	push 	ds 			;
+   588 000002D6 8CC8                    	mov 	ax, cs 			; Make sure DS = CS
+   589 000002D8 8ED8                    	mov 	ds, ax 			;
+   590 000002DA E460                    	in 	al, 60h 		; Get scan code
+   591                                  
+   592 000002DC 3C01                    	cmp	al, 1			; compare with the scancodes for various keys
+   593 000002DE 7430                    	je	.updateEsc
+   594 000002E0 3CCB                    	cmp	al, 0CBh
+   595 000002E2 7433                    	je	.releaseLeft
+   596 000002E4 3CCD                    	cmp	al, 0CDh
+   597 000002E6 7436                    	je	.releaseRight
+   598 000002E8 3C4B                    	cmp	al, 75			
+   599 000002EA 7416                    	je	.updateLeft
+   600 000002EC 3C4D                    	cmp	al, 77
+   601 000002EE 7419                    	je	.updateRight
+   602                                  
+   603                                  .Continue:
+   604 000002F0 E461                    	in 	al, 61h 		; Send acknowledgment without
+   605 000002F2 0C80                    	or 	al, 10000000b 		; modifying the other bits.
+   606 000002F4 E661                    	out 	61h, al 		;
+   607 000002F6 247F                    	and 	al, 01111111b 		;
+   608 000002F8 E661                    	out 	61h, al 		;
+   609 000002FA B020                    	mov 	al, 20h 		; Send End-of-Interrupt signal
+   610 000002FC E620                    	out 	20h, al 		;
+   611 000002FE 1F                      	pop 	ds 			; Restore registers
+   612 000002FF 58                      	pop 	ax 			;
+   613 00000300 5B                      	pop	bx
+   614 00000301 CF                      	iret 				; End of handler
+   615                                  
+   616                                  .updateLeft
+   617 00000302 800E[6500]04            	or	byte[Flags], 04h	; set the LEFT_KEY_FLAG (to 1) in [Flags]
+   618 00000307 EBE7                    	jmp	.Continue
+   619                                  
+   620                                  .updateRight
+   621 00000309 800E[6500]02            	or	byte[Flags], 02h	; set the RIGHT_KEY_FLAG (to 1) in [Flags]
+   622 0000030E EBE0                    	jmp	.Continue
+   623                                  
+   624                                  .updateEsc
+   625 00000310 C606[6500]01            	mov	byte[Flags], 01h	; set the the EXIT_FLAG in [Flags]
+   626 00000315 EBD9                    	jmp	.Continue
+   627                                  
+   628                                  .releaseLeft
+   629 00000317 8026[6500]3B            	and	byte[Flags], 111011b	; clear the LEFT_KEY_FLAG (to 0) in [Flags]
+   630 0000031C EBD2                    	jmp	.Continue
+   631                                  
+   632                                  .releaseRight
+   633 0000031E 8026[6500]3D            	and	byte[Flags], 111101b	; clear the RIGHT_KEY_FLAG (to 0) in [Flags]
+   634 00000323 EBCB                    	jmp	.Continue
+   635                                  
+   636                                  
+   637                                  ;- InstallISR ----------------------------------------------------
+   638                                  ;- Saves the old interrupt service routines and installs the modified timer and keyboard service routines. 
+   639                                  ;- Inputs: cs, TmrISR, KbdISR, Interrupt vector table 
+   640                                  ;- Outputs: Interrupt Vector Table, SavKSeg,  SavKOff,  SavTSeg, SavTOff = addresses of old interrupt vector segments and offsets 
+   641                                  ;- Calls: None 
+   642                                  InstallISR:
+   643                                  ;	call libInstallISR
+   644                                  ;	ret
+   645                                  
+   646 00000325 50                      	push	ax
+   647 00000326 53                      	push	bx
+   648 00000327 06                      	push	es
+   649                                  
+   650 00000328 FA                      	cli						; disable interrupts
+   651                                  	
+   652 00000329 B80000                  	mov	ax, 0000h
+   653 0000032C 8EC0                    	mov	es, ax
+   654                                  
+   655 0000032E BB7200                  	mov	bx, 0072h
+   656 00000331 268B07                  	mov	ax, word[es:bx]			
+   657 00000334 A3[6600]                	mov	word[SavTSeg], ax			; write timer segment address to SavTSeg
+   658 00000337 BB7000                  	mov	bx, 0070h
+   659 0000033A 268B07                  	mov	ax, word[es:bx]
+   660 0000033D A3[6800]                	mov	word[SavTOff], ax			; write timer offset address to SavTOff
+   661                                  
+   662 00000340 BB2600                  	mov	bx, 0026h
+   663 00000343 268B07                  	mov	ax, word[es:bx]
+   664 00000346 A3[6A00]                	mov	word[SavKSeg], ax			; write keyboard segment address to SavKSeg
+   665 00000349 BB2400                  	mov	bx, 0024h
+   666 0000034C 268B07                  	mov	ax, word[es:bx]
+   667 0000034F A3[6C00]                	mov	word[SavKOff], ax			; write keyboard offset address to SavKOff
+   668                                  
+   669 00000352 8CC8                    	mov	ax, cs
+   670 00000354 BB7200                  	mov	bx, 0072h
+   671 00000357 268907                  	mov	word[es:bx], ax				; update timer segment address with cs
+   672 0000035A BB2600                  	mov	bx, 0026h
+   673 0000035D 268907                  	mov	word[es:bx], ax				; update keyboard segment address with cs
+   674                                  
+   675 00000360 B8[B003]                	mov	ax, TmrISR
+   676 00000363 BB7000                  	mov	bx, 0070h
+   677 00000366 268907                  	mov	word[es:bx], ax				; update timer offset address with TmrISR
+   678 00000369 B8[D302]                	mov	ax, KbdISR
+   679 0000036C BB2400                  	mov	bx, 0024h
+   680 0000036F 268907                  	mov	word[es:bx], ax				; update keyboard offset address with KbdISR
+   681                                  
+   682 00000372 FB                      	sti						; enable interrupts
+   683                                  
+   684 00000373 07                      	pop	es
+   685 00000374 5B                      	pop	bx
+   686 00000375 58                      	pop	ax
+   687                                  
+   688 00000376 C3                      	ret
+   689                                  
+   690                                  
+   691                                  ;- RestoreISR ----------------------------------------------------
+   692                                  ;- Restores the old keyboard and timer interrupt service routines.   
+   693                                  ;- Inputs: SavKSeg,  SavKOff,  SavTSeg, SavTOff = addresses of old interrupt vector segments and offsets 
+   694                                  ;- Outputs: Interrupt Vector Table 
+   695                                  ;- Calls: None 
+   696                                  RestoreISR:
+   697                                  ;	call libRestoreISR
+   698                                  
+   699 00000377 50                      	push	ax
+   700 00000378 53                      	push	bx
+   701 00000379 06                      	push	es
+   702                                  
+   703 0000037A FA                      	cli						; disable interrupts
+   704                                  	
+   705 0000037B B80000                  	mov	ax, 0000h
+   706 0000037E 8EC0                    	mov	es, ax
+   707                                  
+   708 00000380 BB7200                  	mov	bx, 0072h
+   709 00000383 A1[6600]                	mov	ax, word[SavTSeg]
+   710 00000386 268907                  	mov	word[es:bx], ax				; restore timer segment address with SavTSeg
+   711 00000389 BB2600                  	mov	bx, 0026h
+   712 0000038C A1[6A00]                	mov	ax, word[SavKSeg]
+   713 0000038F 268907                  	mov	word[es:bx], ax				; restore keyboard segment address with SavKSeg
+   714 00000392 BB7000                  	mov	bx, 0070h
+   715 00000395 A1[6800]                	mov	ax, word[SavTOff]
+   716 00000398 268907                  	mov	word[es:bx], ax				; restore timer offset address with SavTOff
+   717 0000039B BB2400                  	mov	bx, 0024h
+   718 0000039E A1[6C00]                	mov	ax, word[SavKOff]
+   719 000003A1 268907                  	mov	word[es:bx], ax				; restore keyboard offset address with SavKOff
+   720                                  
+   721 000003A4 FB                      	sti						; enable interrupts
+   722                                  
+   723 000003A5 07                      	pop	es
+   724 000003A6 5B                      	pop	bx
+   725 000003A7 58                      	pop	ax
+   726                                  
+   727 000003A8 C3                      	ret
+   728                                  
+   729                                  
+   730                                  ;- InitVideo ----------------------------------------------------
+   731                                  ;- Initialize mode 03h text mode video. 
+   732                                  ;- Inputs: NONE
+   733                                  ;- Outputs: NONE
+   734                                  ;- Calls: int 10h 
+   735                                  InitVideo:
+   736                                  ;	call libInitVideo
+   737                                  
+   738 000003A9 B400                    	mov	ah, 00h		; Clear screen to black background 
+   739 000003AB B003                    	mov	al, 03h		; Set screen to 03h video mode 
+   740 000003AD CD10                    	int 	10h		; Set video mode
+   741 000003AF C3                      	ret
+   742                                  
+   743                                  
+   744                                  ;- TmrISR ----------------------------------------------------
+   745                                  ;- Inputs: NONE
+   746                                  ;- Outputs: TickCount - interrupt counter
+   747                                  ;- Calls: NONE
+   748                                  TmrISR:
+   749 000003B0 2EFE06[6100]            	inc byte [cs:TickCount]  ;increment TickCount :-P
+   750                                  .done
+   751 000003B5 CF                      	iret ;return from interupt :-)
+   752                                  
+   753                                  	
+   754                                  ;- Random ----------------------------------------------------
+   755                                  ;- Inputs:	CX = Max value to return 
+   756                                  ;- Outputs: 	AX = random value in range from (CX-1) to 0
+   757                                  ;- Calls:	NONE
+   758                                  Random
+   759 000003B6 52                      	push	dx
+   760 000003B7 53                      	push	bx
+   761 000003B8 A1[7D00]                        mov     ax, word [seed]
+   762 000003BB BBAD92                          mov     bx, 37549                                                     
+   763                                  
+   764 000003BE F7E3                            mul     bx
+   765 000003C0 057393                          add     ax, 37747
+   766 000003C3 81D20000                        adc     dx, 0
+   767 000003C7 BBFFFF                          mov     bx, 65535
+   768 000003CA F7F3                            div     bx
+   769 000003CC 89D0                            mov     ax, dx    
+   770 000003CE 8916[7D00]               	mov     word [seed], dx
+   771                                  
+   772 000003D2 31D2                            xor     dx, dx
+   773 000003D4 F7F1                            div     cx
+   774 000003D6 89D0                            mov     ax, dx
+   775 000003D8 5B                      	pop	bx
+   776 000003D9 5A                      	pop	dx
+   777                                  
+   778 000003DA C3                              ret
+   779                                  

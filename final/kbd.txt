@@ -1,0 +1,195 @@
+;--------------------------------------------------------------
+;-- dword InstallKeyboard(void)                              --
+;--------------------------------------------------------------
+; Inputs : -
+; Outputs : -
+; Returns : 1 on error; 0 otherwise
+; Calls : _LockArea
+; - installs teh keyboard ISR
+_InstallKeyboard
+	invoke	_LockArea, ds, dword _kbINT, dword 1	;
+	invoke	_LockArea, ds, dword _kbIRQ, dword 1	;
+	invoke	_LockArea, ds, dword _kbIRQ, dword 2	;
+	mov	eax, _KeyboardISR_end			;
+	mov	eax, _KeyboardISR			;
+	invoke	_LockArea, cs, dword _KeyboardISR, eax	; lock variables and handler
+
+	movzx	eax, byte [_kbINT]
+	invoke	_Install_Int, eax, dword _KeyboardISR
+	test	eax, eax	; check for error
+	jz	.done
+	mov	eax, 1
+
+.done
+	ret
+
+;--------------------------------------------------------------
+;-- void RemoveKeyboard(void)                                --
+;--------------------------------------------------------------
+; Inputs : -
+; Outputs : -
+; Returns : -
+; Calls : -
+; - uninstalls the keyboard ISR
+_RemoveKeyboard
+	movzx	eax, byte [_kbINT]
+	invoke	_Remove_Int, eax
+	ret
+
+;--------------------------------------------------------------
+;-- void KeyboardISR(void)                                   --
+;--------------------------------------------------------------
+; Inputs : keypress waiting at port [_kbPort], [_kbIRQ]
+; Outputs : [_key], [_Flags], [_P1_InputFlags], [_P2_InputFlags]
+; Returns : -
+; Calls : -
+; - handles keyboard input from the user
+;
+ 
+
+_KeyboardISR
+	mov	dx, [_kbPort]
+	in	ax, dx
+	cmp	al, 1				;see if ESC was pressed
+	je NEAR .Escape
+	test	al, 10000000b			;test whether it's a press or a release
+	jz	.Press
+.Release
+	and	al, 01111111b			;set MSB to 0
+	cmp	al, [_P1_Up_Key]              ;compare with blue up
+	jne	.Not1UpR
+	and	[_P1_InputFlags], FFF7h
+	jmp	.Ack
+.Not1UpR
+	cmp	al, [_P1_Down_Key]            ;compare with blue down
+	jne	.Not1DnR
+	and	[_P1_InputFlags], FFFBh
+	jmp	.Ack
+.Not1DnR
+	cmp	al, [_P1_Left_Key]            ;compare with blue left
+	jne	.Not1LftR
+	and	[_P1_InputFlags], FFFDh
+	jmp	.Ack
+.Not1LftR
+	cmp	al, [_P1_Right_Key]            ;compare with blue right
+	jne	.Not1RtR
+	and	[_P1_InputFlags], FFFEh
+	jmp	.Ack
+.Not1RtR
+	cmp	al, [_P1_Primary_Key]            ;compare with blue primary
+	jne	.Not1PrR
+	and	[_P1_InputFlags], FFDFh
+	jmp	.Ack
+.Not1PrR
+	cmp	al, [_P1_Secondary_Key]            ;compare with blue secondary
+	jne	.Not1SecR
+	and	[_P1_InputFlags], FFEFh
+	jmp	.Ack
+.Not1SecR
+	cmp	al, [_P2_Up_Key]              ;compare with red up
+	jne	.Not1UpR
+	and	[_P2_InputFlags], FFF7h
+	jmp	.Ack
+.Not2UpR
+	cmp	al, [_P2_Down_Key]            ;compare with red down
+	jne	.Not2DnR
+	and	[_P2_InputFlags], FFFBh
+	jmp	.Ack
+.Not2DnR
+	cmp	al, [_P2_Left_Key]            ;compare with red left
+	jne	.Not2LftR
+	and	[_P2_InputFlags], FFFDh
+	jmp	.Ack
+.Not2LftR
+	cmp	al, [_P2_Right_Key]            ;compare with red right
+	jne	.Not2RtR
+	and	[_P2_InputFlags], FFFEh
+	jmp	.Ack
+.Not2RtR
+	cmp	al, [_P2_Primary_Key]            ;compare with red primary
+	jne	.Not2PrR
+	and	[_P2_InputFlags], FFDFh
+	jmp	.Ack
+.Not2PrR
+	cmp	al, [_P2_Secondary_Key]            ;compare with red secondary
+	jne	.Ack
+	and	[_P2_InputFlags], FFEFh
+	jmp	.Ack
+.Press
+	mov	[_key], al
+	cmp	al, [_P1_Up_Key]              ;compare with blue up
+	jne	.Not1UpP
+	or	[_P1_InputFlags], 0008h
+	jmp	.Ack
+.Not1UpP
+	cmp	al, [_P1_Down_Key]            ;compare with blue down
+	jne	.Not1DnP
+	or	[_P1_InputFlags], 0004h
+	jmp	.Ack
+.Not1DnP
+	cmp	al, [_P1_Left_Key]            ;compare with blue left
+	jne	.Not1LftP
+	or	[_P1_InputFlags], 0002h
+	jmp	.Ack
+.Not1LftP
+	cmp	al, [_P1_Right_Key]            ;compare with blue right
+	jne	.Not1RtP
+	or	[_P1_InputFlags], 0001h
+	jmp	.Ack
+.Not1RtP
+	cmp	al, [_P1_Primary_Key]            ;compare with blue primary
+	jne	.Not1PrP
+	or	[_P1_InputFlags], 0020h
+	jmp	.Ack
+.Not1PrP
+	cmp	al, [_P1_Secondary_Key]            ;compare with blue secondary
+	jne	.Not1SecP
+	or	[_P1_InputFlags], 0010h
+	jmp	.Ack
+.Not1SecP
+	cmp	al, [_P2_Up_Key]              ;compare with red up
+	jne	.Not2UpP
+	or	[_P2_InputFlags], 0008h
+	jmp	.Ack
+.Not2UpP
+	cmp	al, [_P2_Down_Key]            ;compare with red down
+	jne	.Not2DnP
+	or	[_P2_InputFlags], 0004h
+	jmp	.Ack
+.Not2DnP
+	cmp	al, [_P2_Left_Key]            ;compare with red left
+	jne	.Not2LftP
+	or	[_P2_InputFlags], 0002h
+	jmp	.Ack
+.Not2LftP
+	cmp	al, [_P2_Right_Key]            ;compare with red right
+	jne	.Not2RtP
+	or	[_P2_InputFlags], 0001h
+	jmp	.Ack
+.Not2RtP
+	cmp	al, [_P2_Primary_Key]            ;compare with red primary
+	jne	.Not2PrP
+	or	[_P2_InputFlags], 0020h
+	jmp	.Ack
+.Not2PrP
+	cmp	al, [_P2_Secondary_Key]            ;compare with red secondary
+	jne	.Ack
+	or	[_P2_InputFlags], 0010h
+	jmp	.Ack		
+.Escape	
+	or	byte[_Flags], 00000001b
+.Ack 	
+	in	al, 61h
+	or	al, 1000000b
+	out	61h, al
+	and	al, 0111111b
+	out	61h, al
+	mov	al, 20h
+	out	20h, al
+	cmp	byte[_kbIRQ], 8			;ACK with slave pic for [_kbIRQ]>=8
+	jl	.Done
+	mov	al, 20h
+	out	0A0h, al
+.Done
+	ret
+_KeyboardISR_end

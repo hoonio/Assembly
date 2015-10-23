@@ -1,0 +1,257 @@
+     1                                  ; MP1 - Maze
+     2                                  ;  Seunghoon Kim
+     3                                  ;  9/11/2003
+     4                                  ;
+     5                                  ; Author: Mark Lippmann
+     6                                  ; Version 1.0
+     7                                  
+     8                                  
+     9                                  
+    10                                  	BITS 16
+    11                                  
+    12                                  ;====== SECTION 1: Define constants =======================================
+    13                                  
+    14                                  DOWNARROW	EQU	80
+    15                                  RIGHTARROW	EQU	77
+    16                                  LEFTARROW	EQU	75
+    17                                  UPARROW		EQU	72
+    18                                  
+    19                                  CR			EQU	0Dh
+    20                                  LF			EQU	0Ah
+    21                                  
+    22                                  
+    23                                  ;====== SECTION 2: Declare external procedures ============================
+    24                                  
+    25                                  ; from the 291 library
+    26                                  EXTERN  kbdine, dspmsg
+    27                                  
+    28                                  ; these you will have to replace
+    29                                  EXTERN	 libDrawMaze, libGetChar, libUpdateMaze, libAttemptMove, libClearScreen, mp1xit
+    30                                  
+    31                                  ; to allow l.ibMP1 to work
+    32                                  GLOBAL	DrawMaze, GetChar, ClearScreen, AttemptMove, UpdateMaze
+    33                                  GLOBAL	maze, easyclear, PersonRow, PersonCol, Row, Col, Char, KeyPressed
+    34                                  
+    35                                  ;====== SECTION 3: Define stack segment ===================================
+    36                                  
+    37                                  SEGMENT stkseg STACK                    ; *** STACK SEGMENT ***
+    38 00000000 <res 00000200>                  resb      64*8
+    39                                  stacktop:
+    40                                          resb      0                     ; work around NASM bug
+    41                                  
+    42                                  
+    43                                  ;====== SECTION 4: Define code segment ====================================
+    44                                  
+    45                                  SEGMENT code                            ; *** CODE SEGMENT ***
+    46                                  
+    47                                  
+    48                                  ;====== Declare variables for main procedure ===================
+    49                                  
+    50 00000000 232323232323232323-     maze	db '##########',CR,LF,'$'	; the little person in the maze
+    51 00000009 230D0A24           
+    52 0000000D 232A20202020232323-     		db '#*    ####',CR,LF,'$'	; is the asterisk
+    53 00000016 230D0A24           
+    54 0000001A 232323232020202020-     		db '####     #',CR,LF,'$'
+    55 00000023 230D0A24           
+    56 00000027 232320232323202023-     		db '## ###  ##',CR,LF,'$'
+    57 00000030 230D0A24           
+    58 00000034 232020202020232023-     		db '#     # ##',CR,LF,'$'
+    59 0000003D 230D0A24           
+    60 00000041 232323232320202020-     		db '#####    #',CR,LF,'$'
+    61 0000004A 230D0A24           
+    62 0000004E 232020232323232320-     		db '#  ##### #',CR,LF,'$'
+    63 00000057 230D0A24           
+    64 0000005B 232320202323232020-     		db '##  ###  #',CR,LF,'$'
+    65 00000064 230D0A24           
+    66 00000068 232323202020202023-     		db '###     ##',CR,LF,'$'
+    67 00000071 230D0A24           
+    68 00000075 232323232323232323-     		db '##########',CR,LF,'$'
+    69 0000007E 230D0A24           
+    70                                  
+    71 00000082 0D0A24                  easyclear	db CR,LF,'$'		; you can print this out a bunch of times
+    72                                  					; to "clear" the screen (because we're not
+    73                                  					; yet working directly with the video
+    74                                  					; memory
+    75                                  
+    76 00000085 01                      PersonRow	db 1			; coordinates of the
+    77 00000086 01                      PersonCol	db 1			; person
+    78                                  					
+    79 00000087 00                      Row			db 0			; used to pass info
+    80 00000088 00                      Col			db 0			; into DrawChar
+    81 00000089 00                      Char		db 0			; and get info from
+    82                                  							; GetChar (see documentation)
+    83                                  					
+    84 0000008A 00                      KeyPressed	db 0			; you can use to store keypresses
+    85                                  
+    86                                  
+    87                                  ;====== Program initialization =================================
+    88                                  
+    89                                  ..start:
+    90 0000008B 8CC8                            mov     ax, cs
+    91 0000008D 8ED8                            mov     ds, ax  
+    92 0000008F B8[0000]                        mov     ax, stkseg
+    93 00000092 8ED0                            mov     ss, ax
+    94 00000094 BC[0002]                        mov     sp, stacktop
+    95                                  
+    96                                  
+    97                                  ;====== Main procedure =========================================
+    98                                  ; this is the given skeleton of the program
+    99                                  ; MazeLoop is where the program spends all of its time.
+   100                                  
+   101                                  MAIN:
+   102 00000097 B80300                  	mov	ax, 3			
+   103 0000009A CD10                    	int	10h
+   104                                  	
+   105 0000009C E80B00                  	call	MazeInit		; Draw maze for the first time
+   106 0000009F E80C00                  	call	MazeLoop		; Use this for the real program
+   107                                  	
+   108 000000A2 B80300                  	mov	ax, 3
+   109 000000A5 CD10                    	int	10h
+   110                                          
+   111 000000A7 E8(0000)                	call    mp1xit			; exit to DOS
+   112                                  
+   113                                  MazeInit:
+   114 000000AA E81400                  	call	DrawMaze
+   115 000000AD C3                      	ret
+   116                                  	
+   117                                  MazeLoop:
+   118 000000AE E8(0000)                	call 	kbdine
+   119 000000B1 A2[8A00]                	mov		[KeyPressed], al
+   120 000000B4 803E[8A00]1B            	cmp		byte [KeyPressed], 27
+   121 000000B9 7405                    	jz		.done
+   122 000000BB E84F00                  	call	AttemptMove
+   123 000000BE EBEE                    	jmp		MazeLoop
+   124                                  .done
+   125 000000C0 C3                      	ret
+   126                                   
+   127                                  
+   128                                  DrawMaze
+   129                                  	;call	libDrawMaze
+   130                                  	;ret
+   131                                  
+   132 000000C1 E83200                  	call	ClearScreen		; clear the screen by using ClearScreen subroutine
+   133 000000C4 BA[0000]                	mov		dx, maze		; load maze to register dx
+   134 000000C7 BE0000                  	mov		si, 0			; register si reset to count upto 13, the length of line
+   135 000000CA 60                      	pusha					; push to save all the register values
+   136 000000CB E80200                  	call	DispMaze		; calls subroutine DispMaze 
+   137 000000CE 61                      	popa					; load all the register values back
+   138 000000CF C3                      	ret	
+   139                                  
+   140                                  DispMaze	
+   141 000000D0 E8(0000)                	call	dspmsg			; display a line of maze
+   142 000000D3 81C20D00                	add		dx, 13			; move to the next line
+   143 000000D7 46                      	inc		si				; increment si value(count)
+   144 000000D8 81FE0A00                	cmp		si, 10			; compare si value to 10
+   145 000000DC 72F2                    	jb		DispMaze		; execute DispMaze again if < 10 lines
+   146 000000DE C3                      	ret
+   147                                  	
+   148                                  GetChar
+   149                                  	;call	libGetChar
+   150                                  	;ret
+   151                                  	
+   152 000000DF A0[8700]                	mov		al, byte [Row]	; get row address
+   153 000000E2 B30D                    	mov		bl, 0Dh			; load 13
+   154 000000E4 F6E3                    	mul		bl				; multiply number of rows with 13
+   155 000000E6 0206[8800]              	add		al, byte [Col]	; add number of columns to al
+   156 000000EA 05[0000]                	add		ax, maze		; add maze address to offset
+   157 000000ED 89C3                    	mov		bx, ax			; move ax to the base
+   158 000000EF 8A1F                    	mov		bl, byte[bx]	; load the variable in bx to bl
+   159 000000F1 881E[8900]              	mov		byte [Char], bl	; update char with bl
+   160 000000F5 C3                      	ret
+   161                                  
+   162                                  ClearScreen
+   163                                  	;call libClearScreen
+   164                                  	;ret
+   165                                  	
+   166 000000F6 BE0000                  	mov		si, 0			; si value reset for loop count upto 25
+   167 000000F9 E80100                  	call	ClearLoop		; calls subroutine ClearLoop
+   168 000000FC C3                      	ret
+   169                                  	
+   170                                  ClearLoop	
+   171 000000FD BA[8200]                	mov		dx, easyclear	; load easyclear to dx
+   172 00000100 60                      	pusha
+   173 00000101 E8(0000)                	call	dspmsg			; clears one line
+   174 00000104 61                      	popa
+   175 00000105 46                      	inc		si				; increment si value(count)
+   176 00000106 81FE1900                	cmp		si, 25			; compare si value to 25
+   177 0000010A 72F1                    	jb		ClearLoop		; execute ClearLoop again if < 25 times
+   178 0000010C C3                      	ret
+   179                                  
+   180                                  
+   181                                  AttemptMove
+   182                                  	;call	libAttemptMove
+   183                                  	;ret
+   184                                  
+   185                                  
+   186 0000010D 8A3E[8500]              	mov		bh,	byte [PersonRow]			; get row address
+   187 00000111 8A1E[8600]              	mov		bl,	byte [PersonCol]			; get column address
+   188 00000115 803E[8A00]50            	cmp		byte [KeyPressed], DOWNARROW	; compare with down arrow
+   189 0000011A 7418                    	je		IncRow							; jump to increment row function
+   190 0000011C 803E[8A00]4D            	cmp		byte [KeyPressed], RIGHTARROW	; compare with right arrow
+   191 00000121 7416                    	je		IncCol							; jump to increment column function
+   192 00000123 803E[8A00]4B            	cmp		byte [KeyPressed], LEFTARROW	; compare with left arrow
+   193 00000128 7419                    	je		DecCol							; jump to decrement column function
+   194 0000012A 803E[8A00]48            	cmp		byte [KeyPressed], UPARROW		; compare with up arrow
+   195 0000012F 740D                    	je		DecRow							; jump to decrement row function
+   196 00000131 E91400                  	jmp		AttemptMove2					; jump to AttemptMove2
+   197                                  
+   198                                  IncRow
+   199 00000134 FEC7                    	inc bh									; increment bh
+   200 00000136 E90F00                  	jmp		AttemptMove2					; jump to AttemptMove2
+   201                                  
+   202                                  IncCol
+   203 00000139 FEC3                    	inc bl									; increment bl
+   204 0000013B E90A00                  	jmp		AttemptMove2					; jump to AttemptMove2
+   205                                  
+   206                                  DecRow
+   207 0000013E FECF                    	dec bh									; decrement bh
+   208 00000140 E90500                  	jmp		AttemptMove2					; jump to AttemptMove2
+   209                                  
+   210                                  DecCol
+   211 00000143 FECB                    	dec bl									; decrement bl
+   212 00000145 E90000                  	jmp		AttemptMove2					; jump to AttemptMove2
+   213                                  
+   214                                  AttemptMove2	
+   215 00000148 883E[8700]              	mov		byte [Row], bh					; load the new row address from bh
+   216 0000014C 881E[8800]              	mov		byte [Col], bl					; load the new column address from bl
+   217 00000150 E88CFF                  	call	GetChar							; call GetChar to check if the move is valid
+   218 00000153 803E[8900]20            	cmp		byte [Char], 20h				; compare Char to space character
+   219 00000158 7503                    	jne		AttemptMove3					; jump to AttemptMove3 if not equal to a space
+   220 0000015A E80400                  	call	UpdateMaze						; update the mze
+   221                                  	
+   222                                  AttemptMove3	
+   223 0000015D E861FF                  	call	DrawMaze						; clear and draw the maze again
+   224 00000160 C3                      	ret
+   225                                  
+   226                                  UpdateMaze
+   227                                  	;call	libUpdateMaze
+   228                                  	;ret
+   229                                  
+   230 00000161 50                      	push	ax							; bakcup ax
+   231 00000162 53                      	push	bx							; backup bx
+   232                                  
+   233 00000163 A0[8500]                	mov		al,	byte [PersonRow]		; get row address
+   234 00000166 B30D                    	mov		bl, 0Dh						; load 13
+   235 00000168 F6E3                    	mul		bl							; multiply 13 to row address
+   236 0000016A 8A1E[8600]              	mov		bl, byte [PersonCol]		; add column address to bl
+   237 0000016E B700                    	mov		bh, 0						; reset bh to 0
+   238 00000170 01C3                    	add		bx, ax						
+   239 00000172 C687[0000]20            	mov		byte [bx + maze], 20h		; clears the old asterisk from the maze
+   240                                  
+   241 00000177 A0[8700]                	mov		al,	byte [Row]				; get row address
+   242 0000017A B30D                    	mov		bl, 0Dh						; load 13
+   243 0000017C F6E3                    	mul		bl							; multiply 13 to row address
+   244 0000017E 8A1E[8800]              	mov		bl, byte [Col]				; add column address to bl
+   245 00000182 B700                    	mov		bh, 0						; reset bh to 0
+   246 00000184 01C3                    	add		bx, ax						
+   247 00000186 C687[0000]2A            	mov		byte [bx + maze], '*'		; place the new asterisk in the maze
+   248                                  	
+   249 0000018B 8A3E[8700]              	mov		bh,	[Row]					; retrieve row address
+   250 0000018F 8A1E[8800]              	mov		bl,	[Col]					; retrieve column address
+   251 00000193 883E[8500]              	mov		[PersonRow], bh				; update PersonRow
+   252 00000197 881E[8600]              	mov		[PersonCol], bl				; update PersonCol
+   253                                  
+   254 0000019B 5B                      	pop		bx							; restore bx
+   255 0000019C 58                      	pop		ax							; restore ax
+   256                                  
+   257 0000019D C3                      	ret

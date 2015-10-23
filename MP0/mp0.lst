@@ -1,0 +1,135 @@
+     1                                  ; MP0 - Seunghoon Kim - 09/03/2003
+     2                                  ;
+     3                                  ;       This program illustrates a (very) basic assembly program and
+     4                                  ;       the use of LIB291 input and output routines.
+     5                                  ;       By working on this code, you will have the opportunity to 
+     6                                  ;       exercise the tools for this class, namely the editor, 
+     7                                  ;       the Assembler (NASM), and the debugger (TD).
+     8                                  ;       Be sure to put your name in the places where it says 'Your Name' 
+     9                                  ;       and also  change the date where it says 'Today's Date'.  
+    10                                  ;       The changes that you need to make to this program are 
+    11                                  ;       described in the MP0 assignment page.
+    12                                  
+    13                                  	BITS	16
+    14                                  
+    15                                  ;====== SECTION 1: Define constants =======================================
+    16                                  
+    17                                          CR      EQU     0Dh
+    18                                          LF      EQU     0Ah
+    19                                          BEL     EQU     07h
+    20                                  
+    21                                  ;====== SECTION 2: Declare external procedures ============================
+    22                                  
+    23                                  EXTERN  kbdine, dspout, dspmsg, dosxit
+    24                                  
+    25                                  ;====== SECTION 3: Define stack segment ===================================
+    26                                  
+    27                                  SEGMENT stkseg STACK CLASS=STACK        ; *** STACK SEGMENT ***
+    28 00000000 <res 00000200>                  resb      64*8
+    29                                  stacktop:
+    30                                  
+    31                                  ;====== SECTION 4: Define code segment ====================================
+    32                                  
+    33                                  SEGMENT code                            ; *** CODE SEGMENT ***
+    34                                  
+    35                                  ;====== SECTION 5: Declare variables for main procedure ===================
+    36 00000000 00                      mygrade  db      0 
+    37 00000001 576861742067726164-     question db      'What grade would you like in ECE291? ','$'
+    38 0000000A 6520776F756C642079-
+    39 00000013 6F75206C696B652069-
+    40 0000001C 6E204543453239313F-
+    41 00000025 2024               
+    42 00000027 0D0A476F6F64204C75-     Exitmsg  db      CR,LF,'Good Luck!',CR,LF,'$'
+    43 00000030 636B210D0A24       
+    44 00000036 0D0A4E6F7420612076-     invalid  db      CR,LF,'Not a valid choice! ',CR,LF,'$' 
+    45 0000003F 616C69642063686F69-
+    46 00000048 636521200D0A24     
+    47 0000004F 0D0A4C6561726E2061-     Amsg     db      CR,LF,'Learn all material and Submit MPs early.',CR,LF,'$'
+    48 00000058 6C6C206D6174657269-
+    49 00000061 616C20616E64205375-
+    50 0000006A 626D6974204D507320-
+    51 00000073 6561726C792E0D0A24 
+    52 0000007C 0D0A4B656570207570-     Bmsg     db      CR,LF,'Keep up in class and submit MPs on time.',CR,LF,'$'
+    53 00000085 20696E20636C617373-
+    54 0000008E 20616E64207375626D-
+    55 00000097 6974204D5073206F6E-
+    56 000000A0 2074696D652E0D0A24 
+    57 000000A9 0D0A55207375636B2E-     Cmsg	 db		 CR,LF,'U suck.',CR,LF,'$'
+    58 000000B2 0D0A24             
+    59 000000B5 0D0A536B6970206120-     Dmsg     db      CR,LF,'Skip a few machine problems.',CR,LF,'$'
+    60 000000BE 666577206D61636869-
+    61 000000C7 6E652070726F626C65-
+    62 000000D0 6D732E0D0A24       
+    63 000000D6 0D0A536C6565702074-     Fmsg     db      CR,LF,'Sleep through exams.',CR,LF,'$'
+    64 000000DF 68726F756768206578-
+    65 000000E8 616D732E0D0A24     
+    66                                  
+    67                                  
+    68                                  ;====== SECTION 6: Program initialization =================================
+    69                                  
+    70                                  ..start:
+    71 000000EF 8CC8                            mov     ax, cs                  ; Initialize Default Segment register
+    72 000000F1 8ED8                            mov     ds, ax  
+    73 000000F3 B8[0000]                        mov     ax, stkseg              ; Initialize Stack Segment register
+    74 000000F6 8ED0                            mov     ss, ax
+    75 000000F8 BC[0002]                        mov     sp, stacktop            ; Initialize Stack Pointer register
+    76                                  
+    77                                  ;====== SECTION 7: Main procedure =========================================
+    78                                  
+    79                                  MAIN:
+    80 000000FB BA[0100]                        mov     dx, question            ; Prompt user with the grade question
+    81 000000FE E8(0000)                        call    dspmsg                   
+    82 00000101 E8(0000)                        call    kbdine   
+    83 00000104 FEC0                    		mystery	 db		 0FEh,0C0h
+    84 00000106 A2[0000]                        mov     [mygrade], al           ; Save result
+    85                                              
+    86                                  .CheckGrade:
+    87 00000109 803E[0000]41                    cmp     byte [mygrade], 'A'     ; Check if A student
+    88 0000010E 7509                            jne     .NotGradeA
+    89 00000110 BA[4F00]                        mov     dx, Amsg                ; Print message for A students
+    90 00000113 E8(0000)                        call    dspmsg
+    91 00000116 E94E00                          jmp     .mpExit
+    92                                  
+    93                                  .NotGradeA:
+    94 00000119 803E[0000]42                    cmp     byte [mygrade], 'B'     ; Check if B student
+    95 0000011E 7509                            jne     .NotGradeB
+    96 00000120 BA[7C00]                        mov     dx, Bmsg                ; Print message for B students
+    97 00000123 E8(0000)                        call    dspmsg
+    98 00000126 E93E00                          jmp     .mpExit
+    99                                  
+   100                                  .NotGradeB:
+   101 00000129 803E[0000]43                    cmp     byte [mygrade], 'C'     ; Check if C student
+   102 0000012E 7509                            jne     .NotGradeC
+   103 00000130 BA[A900]                        mov     dx, Cmsg                ; Print message for C students
+   104 00000133 E8(0000)                        call    dspmsg
+   105 00000136 E92E00                          jmp     .mpExit
+   106                                  
+   107                                  .NotGradeC:
+   108 00000139 803E[0000]44                    cmp     byte [mygrade], 'D'     ; Check if D student
+   109 0000013E 7509                            jne     .NotGradeD
+   110 00000140 BA[B500]                        mov     dx, Dmsg                ; Print message for D students
+   111 00000143 E8(0000)                        call    dspmsg
+   112 00000146 E91E00                          jmp     .mpExit
+   113                                  
+   114                                  .NotGradeD:
+   115 00000149 803E[0000]46                    cmp     byte [mygrade], 'F'     ; Check if F student
+   116 0000014E 7509                            jne     .NotGradeF
+   117 00000150 BA[D600]                        mov     dx, Fmsg                ; Print message for F students
+   118 00000153 E8(0000)                        call    dspmsg
+   119 00000156 E90E00                          jmp     .mpExit
+   120                                  
+   121                                  .NotGradeF:
+   122 00000159 B207                            mov     dl, BEL                 ; Ring the bell if other character
+   123 0000015B E8(0000)                        call    dspout
+   124 0000015E BA[3600]                        mov     dx, invalid             ; Print invalid message
+   125 00000161 E8(0000)                        call    dspmsg
+   126 00000164 E90600                          jmp     .FinalExit
+   127                                  
+   128                                  .mpExit:
+   129 00000167 BA[2700]                        mov     dx, Exitmsg             ; Type out exit message
+   130 0000016A E8(0000)                        call    dspmsg
+   131                                  
+   132                                  .FinalExit:
+   133 0000016D E8(0000)                        call    dosxit                  ; Exit to DOS
+   134                                  
+   135                                  

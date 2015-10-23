@@ -1,0 +1,8 @@
+
+ Start  Stop   Length Name               Class
+
+ 00000H 001FFH 00200H stkseg             STACK
+ 00200H 004E3H 002E4H code               
+
+Program entry point at 0020:00EF
+

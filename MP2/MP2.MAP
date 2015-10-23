@@ -1,0 +1,8 @@
+
+ Start  Stop   Length Name               Class
+
+ 00000H 001FFH 00200H stkseg             
+ 00200H 02C12H 02A13H code               
+
+Program entry point at 0020:039B
+
